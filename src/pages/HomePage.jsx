@@ -83,9 +83,12 @@ function TodayMovementsPopup({ moves, onClose }) {
 function ProjectTimelineCard({ projekte, navigate }) {
   const { t } = useLanguage()
   const rows = useMemo(() => projekte
-    .filter(p => isOffen(p.status) && p.rok && p.created_at)
+    .filter(p => isOffen(p.status) && p.rok && (p.geplanter_beginn || p.created_at))
     .map(p => {
-      const start = new Date(p.created_at).getTime()
+      // Planned start, not creation date — a job quoted well in advance
+      // shouldn't look like it's already burning through its timeline
+      // before work has even begun.
+      const start = new Date(p.geplanter_beginn ? p.geplanter_beginn + 'T00:00:00' : p.created_at).getTime()
       const end = new Date(p.rok + 'T23:59:59').getTime()
       const totalMs = Math.max(end - start, 1)
       const elapsedMs = Math.min(Math.max(Date.now() - start, 0), totalMs)
@@ -137,6 +140,55 @@ function ProjectTimelineCard({ projekte, navigate }) {
   )
 }
 
+/* ══ UPCOMING STARTS — projects still "geplant" (not yet marked
+   Aktiv) whose planned start date is close or already passed ══ */
+function UpcomingStartsCard({ projekte, navigate }) {
+  const { t } = useLanguage()
+  const rows = useMemo(() => projekte
+    .filter(p => p.status === 'geplant' && p.geplanter_beginn)
+    .map(p => {
+      const start = new Date(p.geplanter_beginn + 'T00:00:00').getTime()
+      const daysUntil = Math.ceil((start - Date.now()) / 86400000)
+      return { p, daysUntil, overdue: daysUntil < 0 }
+    })
+    .sort((a, b) => a.daysUntil - b.daysUntil)
+    .slice(0, 5)
+  , [projekte])
+
+  if (rows.length === 0) return null
+
+  return (
+    <Card className="p-5">
+      <h3 className="font-medium text-sm mb-4 flex items-center gap-2">
+        <Icon name="clipboard" size={15} color="#9b6bd9" /> {t('home_upcoming_starts')}
+      </h3>
+      <div className="space-y-3">
+        {rows.map(({ p, daysUntil, overdue }) => (
+          <button key={p.id} onClick={() => navigate(`/auftraege?projekt=${p.id}`)}
+                  className="w-full flex items-center justify-between gap-2 group">
+            <span className="text-sm font-medium truncate group-hover:text-amber transition-colors">{p.name}</span>
+            {overdue ? (
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-red shrink-0">
+                <StatusDot color="#e0524a" pulse size={6} />
+                {t('home_start_overdue')}
+              </span>
+            ) : daysUntil === 0 ? (
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-amber shrink-0">
+                <StatusDot color="#e8821c" pulse size={6} />
+                {t('home_starts_today')}
+              </span>
+            ) : (
+              <span className="text-[11px] text-muted font-mono shrink-0">
+                {t('home_due_in')} {daysUntil} {daysUntil === 1 ? t('home_day_word') : t('home_days_word')}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 const OWNER_LINKS = [
   { to: '/uebersicht',    labelKey: 'nav_uebersicht',  descKey: 'desc_uebersicht_owner', icon: 'box',       accent: '#4a90d9' },
   { to: '/bewegung',      labelKey: 'nav_bewegung',    descKey: 'desc_bewegung_owner',   icon: 'truck',     accent: '#4caf6e' },
@@ -179,7 +231,7 @@ export default function HomePage({ articles = [], moves = [] }) {
     if (!isManager) return
     Promise.all([
       supabase.from('bestellungen').select('id, status, positionen:bestellung_positionen(menge, preis)').neq('status', 'eingetroffen'),
-      supabase.from('projekte').select('id, name, status, rok, created_at, verkaufspreis, material:projekt_material(geplant_menge, preis)').in('status', ['geplant', 'aktiv', 'pausiert']),
+      supabase.from('projekte').select('id, name, status, rok, geplanter_beginn, created_at, verkaufspreis, material:projekt_material(geplant_menge, preis)').in('status', ['geplant', 'aktiv', 'pausiert']),
     ]).then(([{ data: best }, { data: proj }]) => {
       setBestellungen(best ?? [])
       setProjekte(proj ?? [])
@@ -483,6 +535,8 @@ export default function HomePage({ articles = [], moves = [] }) {
                 <div className="text-xl font-bold font-mono"><CountUp value={erwarteterGewinnAuftraege} format={fmt} /></div>
               </Card>
             </div>
+
+            <UpcomingStartsCard projekte={projekte} navigate={navigate} />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <ProjectTimelineCard projekte={projekte} navigate={navigate} />

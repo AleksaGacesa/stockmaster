@@ -37,6 +37,15 @@ export default function AuftraegeDashboard({ projekte, verbrauchMap, articles, o
       .slice(0, 6)
   , [projekte])
 
+  // Projects still "geplant" (never marked Aktiv) whose planned start
+  // date is close or already passed without anyone starting the clock.
+  const anstehendeStarts = useMemo(() =>
+    projekte
+      .filter(p => p.status === 'geplant' && p.geplanter_beginn)
+      .sort((a, b) => new Date(a.geplanter_beginn) - new Date(b.geplanter_beginn))
+      .slice(0, 6)
+  , [projekte])
+
   const verspaeteteProjekte = useMemo(() =>
     projekte
       .filter(isSpaet)
@@ -132,6 +141,36 @@ export default function AuftraegeDashboard({ projekte, verbrauchMap, articles, o
           ))}
         </div>
       </Card>
+
+      {anstehendeStarts.length > 0 && (
+        <Card className="p-4">
+          <h3 className="font-medium text-sm mb-3">{t('home_upcoming_starts')}</h3>
+          <div className="space-y-1.5">
+            {anstehendeStarts.map(p => {
+              const daysUntil = Math.ceil((new Date(p.geplanter_beginn + 'T00:00:00') - Date.now()) / 86400000)
+              const overdue = daysUntil < 0
+              return (
+                <button key={p.id} onClick={() => onOpenProjekt(p.id)}
+                        className="w-full flex items-center gap-3 bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-left hover:bg-bg-3 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{p.name}</div>
+                    <div className="text-xs text-muted truncate">{p.kunde || '—'}</div>
+                  </div>
+                  {overdue ? (
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-red shrink-0">
+                      <StatusDot color="#e0524a" pulse size={6} />
+                      {t('home_start_overdue')}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-mono text-secondary shrink-0">{fmtDt(p.geplanter_beginn)}</span>
+                  )}
+                  <Icon name="chevronRight" size={14} color="#6b7480" />
+                </button>
+              )
+            })}
+          </div>
+        </Card>
+      )}
 
       <Card className="p-4">
         <h3 className="font-medium text-sm mb-3">{t('ad_upcoming_deadlines')}</h3>

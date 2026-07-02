@@ -84,6 +84,7 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: '', kunde: '', rok: '', verantwortlich_id: '',
     verkaufspreis: 0, notiz: '', arbeitsstunden_pro_woche: 40,
+    geplanter_beginn: new Date().toISOString().slice(0, 10),
     ...(projekt || {})
   })
   const [saving, setSaving] = useState(false)
@@ -104,6 +105,7 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
     const verantwortlich = users.find(u => u.id === form.verantwortlich_id)
     const data = {
       name: form.name.trim(), kunde: form.kunde.trim(), rok: form.rok || null,
+      geplanter_beginn: form.geplanter_beginn || null,
       verantwortlich_id: form.verantwortlich_id || null,
       verantwortlich_name: verantwortlich?.display_name ?? '',
       verkaufspreis: Number(form.verkaufspreis) || 0,
@@ -113,7 +115,12 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
     if (isNew) {
       const stundenProWoche = Number(form.arbeitsstunden_pro_woche) || 40
       const stundensatz = newWorkerRates.reduce((s, r) => s + (Number(r) || 0), 0)
-      const geplanteWochen = form.rok ? Math.max((new Date(form.rok + 'T23:59:59') - new Date()) / (7 * 86400000), 0) : 0
+      // Weeks between the planned START (not "now", which could be
+      // long before work actually begins for a job quoted in advance)
+      // and the deadline — using "now" here inflated the plan with
+      // idle waiting time as if the crew were being paid for it.
+      const beginn = form.geplanter_beginn ? new Date(form.geplanter_beginn + 'T00:00:00') : new Date()
+      const geplanteWochen = form.rok ? Math.max((new Date(form.rok + 'T23:59:59') - beginn) / (7 * 86400000), 0) : 0
       ;({ error: err } = await supabase.from('projekte').insert({
         ...data,
         erstellt_von: profile?.display_name ?? '', erstellt_von_id: profile?.id ?? null,
@@ -160,6 +167,11 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
               <label className="block text-xs text-secondary mb-1">{t('auf_field_customer')}</label>
               <input type="text" value={form.kunde} placeholder="Müller GmbH" autoComplete="off"
                      onChange={e => up('kunde', e.target.value)}
+                     className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
+            </div>
+            <div>
+              <label className="block text-xs text-secondary mb-1">{t('auf_field_start')}</label>
+              <input type="date" value={form.geplanter_beginn ?? ''} onChange={e => up('geplanter_beginn', e.target.value)}
                      className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
             </div>
             <div>
@@ -667,7 +679,7 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
           </h1>
           {projekt.dokument_nr && <p className="text-xs text-muted font-mono mt-1">{projekt.dokument_nr}</p>}
           <p className="text-secondary text-sm mt-1">
-            {projekt.kunde || '—'}{projekt.rok ? ` · ${t('auf_field_deadline')}: ${fmtDt(projekt.rok)}` : ''}{projekt.verantwortlich_name ? ` · ${projekt.verantwortlich_name}` : ''}
+            {projekt.kunde || '—'}{projekt.geplanter_beginn ? ` · ${t('auf_field_start')}: ${fmtDt(projekt.geplanter_beginn)}` : ''}{projekt.rok ? ` · ${t('auf_field_deadline')}: ${fmtDt(projekt.rok)}` : ''}{projekt.verantwortlich_name ? ` · ${projekt.verantwortlich_name}` : ''}
           </p>
           {projekt.status === 'abgeschlossen' && projekt.abgeschlossen_at && (
             <p className="text-xs text-green mt-1">{t('auf_completed_on')} {fmtDt(projekt.abgeschlossen_at)}</p>
