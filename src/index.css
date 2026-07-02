@@ -1,0 +1,87 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Structural colors only (surfaces, borders, body text) — brand/status
+   colors (amber, green, red, blue) stay identical in both themes since
+   they already read fine against both a dark and a light surface, so
+   none of the hundreds of Icon color="#.." call sites need to change. */
+:root {
+  --bg-0: 16 19 22;
+  --bg-1: 24 28 32;
+  --bg-2: 31 36 42;
+  --bg-3: 42 48 56;
+  --border: 50 57 65;
+  --border-strong: 69 77 87;
+  --text-primary: 238 241 244;
+  --text-secondary: 154 163 173;
+  --text-muted: 107 116 128;
+  --color-amber-dim: #3a2a14;
+  --color-green-dim: #1a2e20;
+  --color-red-dim: #3a1c1a;
+  --scrollbar-thumb: #454d57;
+}
+
+[data-theme="light"] {
+  --bg-0: 245 246 248;
+  --bg-1: 255 255 255;
+  --bg-2: 242 243 246;
+  --bg-3: 231 233 238;
+  --border: 222 225 230;
+  --border-strong: 199 204 212;
+  --text-primary: 23 26 31;
+  --text-secondary: 90 99 112;
+  --text-muted: 133 141 152;
+  --color-amber-dim: #fdecd3;
+  --color-green-dim: #ddf3e4;
+  --color-red-dim: #fbe1de;
+  --scrollbar-thumb: #c7cbd1;
+}
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body, #root {
+    height: 100%;
+    background-color: rgb(var(--bg-0));
+    color: rgb(var(--text-primary));
+    -webkit-font-smoothing: antialiased;
+  }
+
+  html { transition: background-color 0.2s ease; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  input, select, textarea, button {
+    font-family: inherit;
+    color: inherit;
+  }
+
+  button { cursor: pointer; touch-action: manipulation; }
+
+
+  /* Prevent mobile browsers from auto-zooming focused form controls. */
+  @media (max-width: 640px) {
+    html, body, #root {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    input, select, textarea {
+      font-size: 16px;
+    }
+  }
+  /* Safe area for mobile notch/home indicator */
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-top    { padding-top:    env(safe-area-inset-top); }
+}
+
+@layer utilities {
+  .text-primary   { color: rgb(var(--text-primary)); }
+  .text-secondary { color: rgb(var(--text-secondary)); }
+  .text-muted     { color: rgb(var(--text-muted)); }
+}
+
