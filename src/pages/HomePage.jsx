@@ -207,7 +207,7 @@ const WORKER_LINKS = [
 
 export default function HomePage({ articles = [], moves = [] }) {
   const { profile, isManager } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const navigate = useNavigate()
   const [showToday, setShowToday] = useState(false)
 
@@ -245,6 +245,16 @@ export default function HomePage({ articles = [], moves = [] }) {
     const materialWert = (p.material ?? []).reduce((s2, m) => s2 + m.geplant_menge * m.preis, 0)
     return s + (Number(p.verkaufspreis ?? 0) - materialWert)
   }, 0)
+
+  // Never-started projects whose planned start is within 2 weeks (or
+  // already passed) — a loud reminder, same treatment as low stock,
+  // so a start date doesn't just quietly slip by unnoticed.
+  const startingSoon = useMemo(() => projekte
+    .filter(p => p.status === 'geplant' && p.geplanter_beginn)
+    .map(p => ({ p, daysUntil: Math.ceil((new Date(p.geplanter_beginn + 'T00:00:00') - Date.now()) / 86400000) }))
+    .filter(x => x.daysUntil <= 14)
+    .sort((a, b) => a.daysUntil - b.daysUntil)
+  , [projekte])
 
   return (
     <>
@@ -308,6 +318,32 @@ export default function HomePage({ articles = [], moves = [] }) {
               </div>
               <button onClick={() => navigate('/uebersicht?bestand=Niedrig')}
                       className="w-full bg-red text-white text-xs font-medium px-3 py-2 rounded-lg">
+                {t('home_view_all')}
+              </button>
+            </div>
+          )}
+
+          {/* Project starting soon alert */}
+          {startingSoon.length > 0 && (
+            <div className="bg-amber-dim border border-amber/40 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-2.5">
+                <StatusDot color="#e8821c" pulse size={9} />
+                <span className="font-semibold text-amber text-sm">{startingSoon.length} {t('home_projects_starting_soon')}</span>
+              </div>
+              <div className="space-y-1.5 mb-2.5">
+                {startingSoon.map(({ p, daysUntil }, i) => (
+                  <button key={p.id} onClick={() => navigate(`/auftraege?projekt=${p.id}`)}
+                          className="w-full flex items-center justify-between gap-2 bg-bg-1 border border-amber/30 rounded-lg px-3 py-2 text-left active:scale-95 transition-transform animate-fade-up"
+                          style={{ animationDelay: `${i * 40}ms` }}>
+                    <span className="text-xs font-medium truncate">{p.name}</span>
+                    <span className={`text-[11px] font-mono font-semibold shrink-0 ${daysUntil < 0 ? 'text-red' : 'text-amber'}`}>
+                      {daysUntil < 0 ? t('home_start_overdue') : daysUntil === 0 ? t('home_starts_today') : `${daysUntil}${lang === 'en' ? 'd' : 'T'}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => navigate('/auftraege')}
+                      className="w-full bg-amber text-bg-0 text-xs font-medium px-3 py-2 rounded-lg">
                 {t('home_view_all')}
               </button>
             </div>
@@ -466,6 +502,34 @@ export default function HomePage({ articles = [], moves = [] }) {
                   <div className="flex items-baseline gap-1">
                     <span className="font-mono text-sm font-bold text-red">{a.menge}</span>
                     <span className="text-[10px] text-muted">/ {a.mindestbestand} {a.einheit}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Project starting soon alert */}
+        {startingSoon.length > 0 && (
+          <div className="bg-amber-dim border border-amber/40 rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <StatusDot color="#e8821c" pulse size={10} />
+                <span className="font-semibold text-amber text-sm">{startingSoon.length} {t('home_projects_starting_soon')}</span>
+              </div>
+              <button onClick={() => navigate('/auftraege')}
+                      className="bg-amber text-bg-0 text-xs font-medium px-3 py-1.5 rounded-lg shrink-0">
+                {t('home_view_all')}
+              </button>
+            </div>
+            <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-1 px-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+              {startingSoon.map(({ p, daysUntil }, i) => (
+                <button key={p.id} onClick={() => navigate(`/auftraege?projekt=${p.id}`)}
+                        className="shrink-0 w-40 bg-bg-1 border border-amber/30 rounded-xl p-3 text-left hover:border-amber hover:-translate-y-0.5 transition-all duration-200 animate-fade-up"
+                        style={{ animationDelay: `${i * 40}ms` }}>
+                  <div className="text-xs font-medium truncate mb-2 leading-tight">{p.name}</div>
+                  <div className={`text-sm font-bold font-mono ${daysUntil < 0 ? 'text-red' : 'text-amber'}`}>
+                    {daysUntil < 0 ? t('home_start_overdue') : daysUntil === 0 ? t('home_starts_today') : `${t('home_due_in')} ${daysUntil} ${daysUntil === 1 ? t('home_day_word') : t('home_days_word')}`}
                   </div>
                 </button>
               ))}
