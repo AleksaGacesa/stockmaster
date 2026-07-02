@@ -37,6 +37,45 @@ function StatusBadge({ status }) {
   )
 }
 
+/* ══ WORKER RATE CHIPS — reused by ProjektFormModal (new project,
+   local-only until saved) and ProjektDetail (live, persists to DB
+   on every change) via the onAdd/onRemove/onRateChange/onRateCommit
+   callbacks each caller wires up differently ══ */
+function WorkerRateChips({ rates, onAdd, onRemove, onRateChange, onRateCommit, disabled }) {
+  const { t } = useLanguage()
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {rates.map((rate, idx) => (
+        <div key={idx}
+             className="flex items-center gap-1.5 bg-gradient-to-br from-bg-2 to-bg-3 border border-border rounded-full pl-1 pr-2 py-1 shadow-sm hover:border-amber/50 transition-colors">
+          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-bg-1 shrink-0"
+                style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)' }}>
+            {idx + 1}
+          </span>
+          <input type="number" min="0" value={rate} disabled={disabled}
+                 onChange={e => onRateChange(idx, e.target.value)}
+                 onBlur={onRateCommit}
+                 className="w-12 bg-transparent text-sm font-mono font-semibold outline-none disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+          <span className="text-[10px] text-muted">€/h</span>
+          <button onClick={() => onRemove(idx)} disabled={disabled}
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-muted hover:text-red hover:bg-red-dim transition-colors disabled:opacity-60">
+            <Icon name="x" size={10} color="currentColor" />
+          </button>
+        </div>
+      ))}
+      <button onClick={onAdd} disabled={disabled}
+              className="flex items-center gap-1 text-xs text-secondary hover:text-amber hover:border-amber/50 border border-dashed border-border rounded-full px-3 py-1.5 transition-colors disabled:opacity-60">
+        <Icon name="plus" size={11} color="currentColor" /> {t('auf_worker_add')}
+      </button>
+      {rates.length > 0 && (
+        <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-dim text-amber">
+          {t('auf_total_short')} {fmt(rates.reduce((s, r) => s + (Number(r) || 0), 0))}/h
+        </span>
+      )}
+    </div>
+  )
+}
+
 /* ══ PROJEKT FORM MODAL ══ */
 function ProjektFormModal({ projekt, users, onClose, onSaved }) {
   const isNew = !projekt?.id
@@ -44,12 +83,18 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
   const { t } = useLanguage()
   const [form, setForm] = useState({
     name: '', kunde: '', rok: '', verantwortlich_id: '',
-    verkaufspreis: 0, notiz: '',
+    verkaufspreis: 0, notiz: '', arbeitsstunden_pro_woche: 40,
     ...(projekt || {})
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Only meaningful for a NEW project — these seed the crew's combined
+  // rate and, together with the deadline, let a real "Geplant" labor
+  // cost be computed once and frozen (see save() below). Editing an
+  // existing project's crew still goes through the live chips in
+  // ProjektDetail, which never touch the frozen columns.
+  const [newWorkerRates, setNewWorkerRates] = useState([])
 
   const up = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -64,11 +109,21 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
       verkaufspreis: Number(form.verkaufspreis) || 0,
       notiz: form.notiz.trim(),
     }
-    const { error: err } = isNew
-      ? await supabase.from('projekte').insert({
-          ...data, erstellt_von: profile?.display_name ?? '', erstellt_von_id: profile?.id ?? null,
-        })
-      : await supabase.from('projekte').update(data).eq('id', projekt.id)
+    let err
+    if (isNew) {
+      const stundenProWoche = Number(form.arbeitsstunden_pro_woche) || 40
+      const stundensatz = newWorkerRates.reduce((s, r) => s + (Number(r) || 0), 0)
+      const geplanteWochen = form.rok ? Math.max((new Date(form.rok + 'T23:59:59') - new Date()) / (7 * 86400000), 0) : 0
+      ;({ error: err } = await supabase.from('projekte').insert({
+        ...data,
+        erstellt_von: profile?.display_name ?? '', erstellt_von_id: profile?.id ?? null,
+        stundensatz, arbeitsstunden_pro_woche: stundenProWoche,
+        geplante_arbeiter_anzahl: newWorkerRates.length, geplante_wochen: geplanteWochen,
+        geplante_stundensatz: stundensatz, geplante_arbeitskosten: stundensatz * stundenProWoche * geplanteWochen,
+      }))
+    } else {
+      ;({ error: err } = await supabase.from('projekte').update(data).eq('id', projekt.id))
+    }
     setSaving(false)
     if (err) { setError(err.message); return }
     onSaved()
@@ -132,12 +187,31 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
               <input type="number" min="0" value={form.verkaufspreis} onChange={e => up('verkaufspreis', e.target.value)}
                      className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
             </div>
+            {isNew && (
+              <div>
+                <label className="block text-xs text-secondary mb-1">{t('auf_field_hours_per_week')}</label>
+                <input type="number" min="1" value={form.arbeitsstunden_pro_woche}
+                       onChange={e => up('arbeitsstunden_pro_woche', e.target.value)}
+                       className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
+              </div>
+            )}
             <div className="sm:col-span-2">
               <label className="block text-xs text-secondary mb-1">{t('auf_field_note')}</label>
               <input type="text" value={form.notiz} placeholder="z.B. Sonderwunsch Farbe RAL 7016" autoComplete="off"
                      onChange={e => up('notiz', e.target.value)}
                      className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
             </div>
+            {isNew && (
+              <div className="sm:col-span-2">
+                <label className="block text-xs text-secondary mb-1.5">{t('auf_worker_label')}</label>
+                <WorkerRateChips rates={newWorkerRates}
+                  onAdd={() => setNewWorkerRates(r => [...r, r.length ? r[r.length - 1] : 20])}
+                  onRemove={(idx) => setNewWorkerRates(r => r.filter((_, i) => i !== idx))}
+                  onRateChange={(idx, v) => setNewWorkerRates(r => r.map((x, i) => i === idx ? v : x))}
+                  onRateCommit={() => {}} />
+                <p className="text-[11px] text-muted mt-1.5">{t('auf_new_crew_hint')}</p>
+              </div>
+            )}
           </div>
           {error && <p className="text-red text-xs">{error}</p>}
         </div>
@@ -333,7 +407,12 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
   // number), so we split the total evenly as a starting point.
   const [workerRates, setWorkerRates] = useState(() => {
     const seg = offeneSegmente(projekt)[0]
-    const count = seg?.arbeiter_anzahl ?? 0
+    // Before the project's first zeiterfassung segment exists (e.g. a
+    // brand-new "geplant" project), fall back to the headcount frozen
+    // at creation so the chips — and therefore the first "Aktiv"
+    // activation's zeiterfassung insert — reflect the crew that was
+    // actually planned, not zero.
+    const count = seg?.arbeiter_anzahl ?? projekt.geplante_arbeiter_anzahl ?? 0
     if (count === 0) return []
     const per = Math.round((Number(projekt.stundensatz ?? 24) / count) * 100) / 100
     return Array.from({ length: count }, () => per)
@@ -501,17 +580,24 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
   const materialWert = rows.reduce((s, r) => s + r.geplant_menge * r.preis, 0)
   const arbeitsstunden = projektArbeitsstunden(projekt)
   const elapsedStunden = projektElapsedStunden(projekt)
+  // Live labor cost — actual elapsed time × the crew's CURRENT
+  // combined rate. Keeps ticking as work happens.
   const arbeitskosten = projektArbeitskosten(projekt)
-  const gesamtkosten = materialWert + arbeitskosten
+  // Geplant labor cost — frozen at project creation (initial crew ×
+  // weekly-hours target × weeks until the deadline). Reducing the
+  // crew later only changes projekt.stundensatz (live), never this,
+  // so finishing with fewer people than planned shows up as Live
+  // profit beating Geplant profit instead of the plan silently
+  // shrinking to match reality.
+  const geplanteArbeitskosten = Number(projekt.geplante_arbeitskosten ?? 0)
+  const gesamtkosten = materialWert + geplanteArbeitskosten
   const gewinn = Number(projekt.verkaufspreis ?? 0) - gesamtkosten
-  // "Live" mirrors the planned block above but uses what's actually
-  // happened so far — material really taken (not just planned) and
-  // labor cost keeps ticking with real elapsed time, so a project that
-  // overruns its deadline shows that here instead of staying frozen
-  // at the original estimate.
   const materialLiveWert = allRows.reduce((s, r) => s + r.verbrauchtMenge * r.preis, 0)
   const gesamtkostenLive = materialLiveWert + arbeitskosten
   const gewinnLive = Number(projekt.verkaufspreis ?? 0) - gesamtkostenLive
+  const geplantLaborLabel = lang === 'en'
+    ? `${(projekt.geplante_wochen ?? 0).toFixed(1)} wks × ${projekt.arbeitsstunden_pro_woche ?? 40}h/wk × ${fmt(projekt.geplante_stundensatz ?? 0)}`
+    : `${(projekt.geplante_wochen ?? 0).toFixed(1)} Wochen × ${projekt.arbeitsstunden_pro_woche ?? 40}Std/Woche × ${fmt(projekt.geplante_stundensatz ?? 0)}`
   const offene = offeneSegmente(projekt)
   const aktivSeit = offene.length > 0
     ? Math.min(...offene.map(s => new Date(s.started_at).getTime()))
@@ -591,35 +677,10 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
               <Icon name="user" size={13} color="#6b7480" />
               <span className="text-xs text-secondary">{t('auf_worker_label')}</span>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {workerRates.map((rate, idx) => (
-                <div key={idx}
-                     className="flex items-center gap-1.5 bg-gradient-to-br from-bg-2 to-bg-3 border border-border rounded-full pl-1 pr-2 py-1 shadow-sm hover:border-amber/50 transition-colors">
-                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-bg-1 shrink-0"
-                        style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)' }}>
-                    {idx + 1}
-                  </span>
-                  <input type="number" min="0" value={rate} disabled={arbeiterBusy}
-                         onChange={e => changeRateLocal(idx, e.target.value)}
-                         onBlur={commitRates}
-                         className="w-12 bg-transparent text-sm font-mono font-semibold outline-none disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                  <span className="text-[10px] text-muted">€/h</span>
-                  <button onClick={() => removeWorker(idx)} disabled={arbeiterBusy}
-                          className="w-4 h-4 rounded-full flex items-center justify-center text-muted hover:text-red hover:bg-red-dim transition-colors disabled:opacity-60">
-                    <Icon name="x" size={10} color="currentColor" />
-                  </button>
-                </div>
-              ))}
-              <button onClick={addWorker} disabled={arbeiterBusy}
-                      className="flex items-center gap-1 text-xs text-secondary hover:text-amber hover:border-amber/50 border border-dashed border-border rounded-full px-3 py-1.5 transition-colors disabled:opacity-60">
-                <Icon name="plus" size={11} color="currentColor" /> {t('auf_worker_add')}
-              </button>
-              {workerRates.length > 0 && (
-                <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-dim text-amber">
-                  {t('auf_total_short')} {fmt(workerRates.reduce((s, r) => s + (Number(r) || 0), 0))}/h
-                </span>
-              )}
-            </div>
+            <WorkerRateChips rates={workerRates}
+              onAdd={addWorker} onRemove={removeWorker}
+              onRateChange={changeRateLocal} onRateCommit={commitRates}
+              disabled={arbeiterBusy} />
             {aktivSeit && (
               <p className="text-xs text-blue mt-2 flex items-center gap-1.5">
                 {t('auf_active_since')} <LiveDuration since={aktivSeit} color="#4a90d9" />
@@ -688,8 +749,8 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
               <span>{t('auf_material_costs')}</span><span className="font-mono">{fmt(materialWert)}</span>
             </div>
             <div className="flex justify-between text-secondary">
-              <span>{t('auf_labor_costs')} ({elapsedStunden.toFixed(1)} {t('auf_hours_word')} × {fmt(projekt.stundensatz ?? 24)} {t('auf_crew_word')})</span>
-              <span className="font-mono">{fmt(arbeitskosten)}</span>
+              <span>{t('auf_labor_costs')} ({geplantLaborLabel})</span>
+              <span className="font-mono">{fmt(geplanteArbeitskosten)}</span>
             </div>
             <div className="flex justify-between font-semibold border-t border-border pt-1.5">
               <span>{t('auf_total_costs')}</span><span className="font-mono">{fmt(gesamtkosten)}</span>

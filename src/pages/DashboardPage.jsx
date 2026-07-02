@@ -14,6 +14,88 @@ const fmtDay = (d) => new Intl.DateTimeFormat('de-DE', { day:'2-digit', month:'2
 
 const COLORS = ['#e8821c','#4caf6e','#4a90d9','#9b6bd9','#d96b8f']
 
+// A few cheap, genuinely useful heuristics computed from data already
+// on screen — not a real "AI" call, just the kind of thing an
+// experienced Lagerleiter would notice at a glance. Each tip only
+// shows up if there's actually enough data behind it.
+function SmartInsightsCard({ articles, moves, byKategorie, totalValue }) {
+  const { t, lang } = useLanguage()
+
+  const tips = useMemo(() => {
+    const cutoff = Date.now() - 30 * 86400000
+    const recentAusgang = moves.filter(m => m.typ === 'ausgang' && new Date(m.created_at).getTime() >= cutoff)
+    const byArtikel = {}
+    recentAusgang.forEach(m => { byArtikel[m.artikel_id] = (byArtikel[m.artikel_id] ?? 0) + Number(m.menge) })
+
+    const out = []
+
+    const topMovedEntry = Object.entries(byArtikel).sort((a, b) => b[1] - a[1])[0]
+    const topMoved = topMovedEntry ? articles.find(a => a.id === Number(topMovedEntry[0])) : null
+    if (topMoved) {
+      out.push({
+        icon: 'truck', color: '#4a90d9',
+        text: lang === 'en'
+          ? `"${topMoved.name}" moved the most in the last 30 days — ${Math.round(topMovedEntry[1])} ${topMoved.einheit} out.`
+          : `"${topMoved.name}" wurde in den letzten 30 Tagen am häufigsten bewegt — ${Math.round(topMovedEntry[1])} ${topMoved.einheit} Ausgang.`,
+      })
+    }
+
+    let runOutSoonest = null
+    Object.entries(byArtikel).forEach(([artikelId, menge]) => {
+      const artikel = articles.find(a => a.id === Number(artikelId))
+      if (!artikel) return
+      const dailyRate = menge / 30
+      if (dailyRate <= 0) return
+      const daysLeft = artikel.menge / dailyRate
+      if (daysLeft < 30 && (!runOutSoonest || daysLeft < runOutSoonest.daysLeft)) runOutSoonest = { artikel, daysLeft }
+    })
+    if (runOutSoonest) {
+      const days = Math.max(Math.round(runOutSoonest.daysLeft), 0)
+      out.push({
+        icon: 'alert', color: '#e0524a',
+        text: lang === 'en'
+          ? `At the current pace, "${runOutSoonest.artikel.name}" runs out in about ${days} day${days === 1 ? '' : 's'}.`
+          : `Bei aktuellem Verbrauch geht "${runOutSoonest.artikel.name}" in etwa ${days} Tag${days === 1 ? '' : 'en'} aus.`,
+      })
+    }
+
+    if (byKategorie.length > 0 && totalValue > 0) {
+      const [kat, val] = byKategorie[0]
+      const pct = Math.round((val / totalValue) * 100)
+      if (pct >= 25) {
+        out.push({
+          icon: 'chart', color: '#4caf6e',
+          text: lang === 'en'
+            ? `"${kat}" alone makes up ${pct}% of your total stock value.`
+            : `"${kat}" macht allein ${pct}% Ihres gesamten Lagerwerts aus.`,
+        })
+      }
+    }
+
+    return out
+  }, [articles, moves, byKategorie, totalValue, lang])
+
+  if (tips.length === 0) return null
+
+  return (
+    <Card className="p-5">
+      <h3 className="font-medium text-sm mb-3.5 flex items-center gap-2">
+        <Icon name="chart" size={15} color="#e8821c" /> {t('dash_insights_title')}
+      </h3>
+      <div className="space-y-2.5">
+        {tips.map((tip, i) => (
+          <div key={i} className="flex items-start gap-2.5 text-sm">
+            <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5" style={{ background: tip.color + '1a' }}>
+              <Icon name={tip.icon} size={13} color={tip.color} />
+            </div>
+            <span className="text-secondary leading-relaxed">{tip.text}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function MagazinDashboard({ articles, moves }) {
   const { t, lang } = useLanguage()
   const totalValue  = articles.reduce((s, a) => s + a.menge * a.preis, 0)
@@ -114,6 +196,8 @@ function MagazinDashboard({ articles, moves }) {
           </div>
         </Card>
 
+        <SmartInsightsCard articles={articles} moves={moves} byKategorie={byKategorie} totalValue={totalValue} />
+
         {recentMoves.length > 0 && (
           <Card className="p-3">
             <h3 className="text-xs font-medium text-secondary mb-2">{t('home_recent_activity')}</h3>
@@ -191,18 +275,19 @@ function MagazinDashboard({ articles, moves }) {
           </Card>
         </div>
 
+        <SmartInsightsCard articles={articles} moves={moves} byKategorie={byKategorie} totalValue={totalValue} />
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="p-5">
-            <h3 className="font-medium text-sm mb-4">{t('dash_highest_value')}</h3>
-            <div className="space-y-3">
-              {topValue.map((a, i) => (
-                <div key={a.id} className="flex items-center gap-3">
-                  <span className="text-xs text-muted font-mono w-4">{i + 1}</span>
+          <Card className="p-4">
+            <h3 className="text-xs font-medium text-muted mb-3">{t('dash_highest_value')}</h3>
+            <div className="space-y-2">
+              {topValue.slice(0, 3).map((a, i) => (
+                <div key={a.id} className="flex items-center gap-2.5">
+                  <span className="text-[11px] text-muted font-mono w-3">{i + 1}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{a.name}</div>
-                    <div className="text-xs text-muted font-mono">{a.nummer}</div>
+                    <div className="text-xs font-medium truncate">{a.name}</div>
                   </div>
-                  <span className="font-mono text-sm font-semibold shrink-0">{fmt(a.menge * a.preis)}</span>
+                  <span className="font-mono text-xs text-secondary shrink-0">{fmt(a.menge * a.preis)}</span>
                 </div>
               ))}
             </div>

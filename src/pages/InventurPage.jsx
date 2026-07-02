@@ -10,6 +10,17 @@ import QrScannerCard from '../components/QrScannerCard'
 const fmt   = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n)
 const fmtDt = (d) => new Intl.DateTimeFormat('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' }).format(new Date(d))
 
+// A closed session's updated_at is only ever bumped by toggleStatus,
+// so once abgeschlossen it doubles as "closed at" — combined with
+// created_at that's enough for a "ran from X to Y" range without a
+// dedicated column, and collapses to one date when it closed same-day.
+const sessionDateRange = (s) => {
+  if (s.status !== 'abgeschlossen') return fmtDt(s.created_at)
+  const start = fmtDt(s.created_at)
+  const end = fmtDt(s.updated_at)
+  return start === end ? start : `${start} – ${end}`
+}
+
 /* ══ SESSION LIST ══ */
 function SessionList({ sessions, articles, isOwner, onOpen, onRefresh }) {
   const { t } = useLanguage()
@@ -82,7 +93,7 @@ function SessionList({ sessions, articles, isOwner, onOpen, onRefresh }) {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-sm truncate">{s.name}</div>
-                        <div className="text-xs text-muted font-mono mt-0.5">{s.dokument_nr ? `${s.dokument_nr} · ` : ''}{fmtDt(s.created_at)}</div>
+                        <div className="text-xs text-muted font-mono mt-0.5">{s.dokument_nr ? `${s.dokument_nr} · ` : ''}{sessionDateRange(s)}</div>
                       </div>
                       <span className={`text-xs px-2 py-1 rounded-md font-medium ml-2 shrink-0 ${
                         s.status === 'aktiv' ? 'bg-amber-dim text-amber' : 'bg-green-dim text-green'
@@ -162,7 +173,7 @@ function SessionList({ sessions, articles, isOwner, onOpen, onRefresh }) {
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <h3 className="font-semibold">{s.name}</h3>
-                      <p className="text-xs text-muted font-mono mt-0.5">{s.dokument_nr ? `${s.dokument_nr} · ` : ''}{fmtDt(s.created_at)}</p>
+                      <p className="text-xs text-muted font-mono mt-0.5">{s.dokument_nr ? `${s.dokument_nr} · ` : ''}{sessionDateRange(s)}</p>
                     </div>
                     <span className={`text-xs px-2 py-1 rounded-md font-medium ${
                       s.status === 'aktiv' ? 'bg-amber-dim text-amber' : 'bg-green-dim text-green'
@@ -535,6 +546,7 @@ function SessionView({ session, articles, setArticles, setMoves, isOwner, onBack
             )}
           </div>
           {session.dokument_nr && <div className="text-xs text-muted font-mono mb-1.5">{session.dokument_nr}</div>}
+          <div className="text-xs text-muted mb-1.5">{sessionDateRange(session)}</div>
           <div className="flex justify-between text-xs mb-1.5">
             <span className="text-secondary">{erfasst} / {articles.length} {t('inv_captured')}</span>
             <span className="font-mono">{pct}%</span>
@@ -578,6 +590,7 @@ function SessionView({ session, articles, setArticles, setMoves, isOwner, onBack
               }`}>{session.status === 'aktiv' ? t('status_aktiv') : t('inv_status_done_full')}</span>
             </h1>
             {session.dokument_nr && <p className="text-xs text-muted font-mono mt-1">{session.dokument_nr}</p>}
+            <p className="text-xs text-muted mt-1">{sessionDateRange(session)}</p>
             <p className="text-secondary text-sm mt-1">{erfasst} {t('ueb_of')} {articles.length} {t('ueb_articles_word')} {t('inv_captured')} ({pct}%)</p>
           </div>
           {isOwner && (

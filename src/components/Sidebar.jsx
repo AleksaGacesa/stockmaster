@@ -15,8 +15,8 @@ const NAV_ITEMS = [
   { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', workerOnly: true },
   { to: '/lieferanten',  labelKey: 'nav_lieferanten', icon: 'building', ownerOnly: true },
   { to: '/inventur',     labelKey: 'nav_inventur',    icon: 'filter' },
-  { to: '/import',       labelKey: 'nav_import',      icon: 'upload',   ownerOnly: true },
-  { to: '/administration', labelKey: 'nav_administration', icon: 'download', ownerOnly: true },
+  { to: '/import',       labelKey: 'nav_import',      icon: 'upload',   ownerOnly: true, desktopOnly: true },
+  { to: '/administration', labelKey: 'nav_administration', icon: 'download', ownerOnly: true, desktopOnly: true },
   { to: '/einstellungen',labelKey: 'nav_einstellungen', icon: 'settings', ownerOnly: true },
 ]
 
@@ -64,7 +64,7 @@ export default function Sidebar({ open, onClose, lowStockCount }) {
               end={item.to === '/'}
               onClick={onClose}
               className={({ isActive }) => `
-                flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full
+                ${item.desktopOnly ? 'hidden sm:flex' : 'flex'} items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full
                 transition-colors duration-100 relative
                 ${isActive
                   ? 'bg-bg-3 text-primary border-l-2 border-amber pl-[10px]'

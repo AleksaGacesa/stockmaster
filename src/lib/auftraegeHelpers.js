@@ -44,7 +44,13 @@ export const projektArbeitskosten = (p) => projektElapsedStunden(p) * Number(p.s
 
 export const projektElapsedStunden = (p) => (p.zeiterfassung ?? []).reduce((sum, seg) => sum + segmentStundenRoh(seg), 0)
 
-export const projektGesamtkosten = (p) => materialGeplantWert(p) + projektArbeitskosten(p)
+// Uses the labor cost frozen at project creation (geplante_arbeitskosten
+// — crew × weekly-hours target × weeks until deadline), not the live
+// elapsed-time figure — a "planned" cost that changes when the crew
+// shrinks or grows mid-project isn't a plan at all. See
+// projektArbeitskosten for the live equivalent and
+// projektRealisierterGewinn for the fully-realized one.
+export const projektGesamtkosten = (p) => materialGeplantWert(p) + Number(p.geplante_arbeitskosten ?? 0)
 export const projektGewinn = (p) => Number(p.verkaufspreis ?? 0) - projektGesamtkosten(p)
 
 export const offeneSegmente = (p) => (p.zeiterfassung ?? []).filter(s => !s.ended_at)

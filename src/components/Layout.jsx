@@ -2,21 +2,28 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Icon from './Icon'
+import { useLanguage } from '../hooks/useLanguage'
 
-const PAGE_TITLES = {
-  '/':              'Home',
-  '/uebersicht':    'ArtikelÃ¼bersicht',
-  '/bewegung':      'Warenbewegung',
-  '/inventur':      'Inventur',
-  '/dashboard':     'Dashboard',
-  '/import':        'Excel Import',
-  '/einstellungen': 'Einstellungen',
+const PAGE_TITLE_KEYS = {
+  '/':              'nav_home',
+  '/uebersicht':    'nav_uebersicht',
+  '/bewegung':      'nav_bewegung',
+  '/inventur':      'nav_inventur',
+  '/dashboard':     'nav_dashboard',
+  '/auftraege':     'nav_auftraege',
+  '/projekte':      'nav_projekte',
+  '/lieferanten':   'nav_lieferanten',
+  '/import':        'nav_import',
+  '/administration': 'nav_administration',
+  '/datenschutz':   'nav_datenschutz',
+  '/einstellungen': 'nav_einstellungen',
 }
 
 export default function Layout({ lowStockCount }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { pathname } = useLocation()
-  const title = PAGE_TITLES[pathname] ?? 'StockMaster'
+  const { t } = useLanguage()
+  const title = PAGE_TITLE_KEYS[pathname] ? t(PAGE_TITLE_KEYS[pathname]) : 'StockMaster'
 
   return (
     <div className="flex h-full bg-bg-0 overflow-hidden">
@@ -26,7 +33,7 @@ export default function Layout({ lowStockCount }) {
         lowStockCount={lowStockCount}
       />
 
-      {/* Main content â€” offset by sidebar width on large screens */}
+      {/* Main content — offset by sidebar width on large screens */}
       <div className="flex-1 flex flex-col min-h-full min-w-0 lg:ml-60">
 
         {/* Mobile top bar */}
@@ -34,7 +41,7 @@ export default function Layout({ lowStockCount }) {
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-lg bg-bg-2 border border-border"
-            aria-label="MenÃ¼ Ã¶ffnen"
+            aria-label={t('common_open_menu')}
           >
             <Icon name="menu" size={18} color="#9aa3ad" />
           </button>
