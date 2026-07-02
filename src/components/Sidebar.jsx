@@ -8,23 +8,25 @@ import { useLanguage } from '../hooks/useLanguage'
 
 const NAV_ITEMS = [
   { to: '/',             labelKey: 'nav_home',        icon: 'home' },
-  { to: '/dashboard',    labelKey: 'nav_dashboard',   icon: 'chart',    ownerOnly: true },
+  { to: '/dashboard',    labelKey: 'nav_dashboard',   icon: 'chart',    managerOnly: true },
   { to: '/uebersicht',   labelKey: 'nav_uebersicht',  icon: 'box' },
   { to: '/bewegung',     labelKey: 'nav_bewegung',    icon: 'truck' },
-  { to: '/auftraege',    labelKey: 'nav_auftraege',   icon: 'clipboard', ownerOnly: true },
-  { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', workerOnly: true },
-  { to: '/lieferanten',  labelKey: 'nav_lieferanten', icon: 'building', ownerOnly: true },
+  { to: '/auftraege',    labelKey: 'nav_auftraege',   icon: 'clipboard', managerOnly: true },
+  { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', plainWorkerOnly: true },
+  { to: '/lieferanten',  labelKey: 'nav_lieferanten', icon: 'building', managerOnly: true },
   { to: '/inventur',     labelKey: 'nav_inventur',    icon: 'filter' },
-  { to: '/import',       labelKey: 'nav_import',      icon: 'upload',   ownerOnly: true, desktopOnly: true },
-  { to: '/administration', labelKey: 'nav_administration', icon: 'download', ownerOnly: true, desktopOnly: true },
+  { to: '/import',       labelKey: 'nav_import',      icon: 'upload',   managerOnly: true, desktopOnly: true },
+  { to: '/administration', labelKey: 'nav_administration', icon: 'download', managerOnly: true, desktopOnly: true },
   { to: '/einstellungen',labelKey: 'nav_einstellungen', icon: 'settings', ownerOnly: true },
 ]
 
 export default function Sidebar({ open, onClose, lowStockCount }) {
-  const { profile, isOwner, signOut } = useAuth()
+  const { profile, isOwner, isAdmin, isManager, signOut } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { lang, toggleLang, t } = useLanguage()
-  const visible = NAV_ITEMS.filter(i => (!i.ownerOnly || isOwner) && (!i.workerOnly || !isOwner))
+  const visible = NAV_ITEMS.filter(i =>
+    (!i.ownerOnly || isOwner) && (!i.managerOnly || isManager) && (!i.plainWorkerOnly || !isManager)
+  )
 
   return (
     <>
@@ -115,7 +117,7 @@ export default function Sidebar({ open, onClose, lowStockCount }) {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium truncate">{profile?.display_name}</div>
-              <div className="text-[11px] text-muted">{isOwner ? t('sidebar_owner') : t('sidebar_worker')}</div>
+              <div className="text-[11px] text-muted">{isOwner ? t('sidebar_owner') : isAdmin ? t('sidebar_admin') : t('sidebar_worker')}</div>
             </div>
           </div>
           <button

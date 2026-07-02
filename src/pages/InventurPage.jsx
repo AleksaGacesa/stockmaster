@@ -22,7 +22,7 @@ const sessionDateRange = (s) => {
 }
 
 /* ══ SESSION LIST ══ */
-function SessionList({ sessions, articles, isOwner, onOpen, onRefresh }) {
+function SessionList({ sessions, articles, isManager, onOpen, onRefresh }) {
   const { t } = useLanguage()
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
@@ -48,7 +48,7 @@ function SessionList({ sessions, articles, isOwner, onOpen, onRefresh }) {
         <div className="p-3 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-semibold">{t('inv_title')}</h1>
-            {isOwner && !showNew && (
+            {isManager && !showNew && (
               <button onClick={() => setShowNew(true)}
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold"
                       style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
@@ -107,7 +107,7 @@ function SessionList({ sessions, articles, isOwner, onOpen, onRefresh }) {
                       <div className="h-full rounded-full transition-all"
                            style={{ width: `${pct}%`, background: s.status === 'aktiv' ? '#e8821c' : '#4caf6e' }} />
                     </div>
-                    {isOwner && (
+                    {isManager && (
                       <button onClick={e => { e.stopPropagation(); del(s.id) }}
                               className="mt-2 flex items-center gap-1 text-xs text-muted px-2 py-1 rounded-lg border border-border bg-bg-2">
                         <Icon name="trash" size={11} color="currentColor" /> {t('common_delete')}
@@ -128,7 +128,7 @@ function SessionList({ sessions, articles, isOwner, onOpen, onRefresh }) {
             <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('inv_title')}</h1>
             <p className="text-secondary text-sm">{t('inv_subtitle')}</p>
           </div>
-          {isOwner && !showNew && (
+          {isManager && !showNew && (
             <button onClick={() => setShowNew(true)}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
                     style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
@@ -187,7 +187,7 @@ function SessionList({ sessions, articles, isOwner, onOpen, onRefresh }) {
                     <div className="h-full rounded-full transition-all duration-500"
                          style={{ width: `${pct}%`, background: s.status === 'aktiv' ? '#e8821c' : '#4caf6e' }} />
                   </div>
-                  {isOwner && (
+                  {isManager && (
                     <button onClick={e => { e.stopPropagation(); del(s.id) }}
                             className="mt-3 flex items-center gap-1.5 text-xs text-muted hover:text-red border border-border px-2.5 py-1.5 rounded-lg hover:border-red transition-colors">
                       <Icon name="trash" size={12} color="currentColor" /> {t('common_delete')}
@@ -511,7 +511,7 @@ function BerichtTab({ session, articles, setArticles, setMoves }) {
 }
 
 /* ══ SESSION VIEW ══ */
-function SessionView({ session, articles, setArticles, setMoves, isOwner, onBack, onRefresh }) {
+function SessionView({ session, articles, setArticles, setMoves, isManager, onBack, onRefresh }) {
   const { t } = useLanguage()
   const [tab, setTab] = useState('zaehlen')
   const erfasst = session.erfassungen?.length ?? 0
@@ -538,7 +538,7 @@ function SessionView({ session, articles, setArticles, setMoves, isOwner, onBack
                 session.status === 'aktiv' ? 'bg-amber-dim text-amber' : 'bg-green-dim text-green'
               }`}>{session.status === 'aktiv' ? t('status_aktiv') : t('inv_status_done_short')}</span>
             </div>
-            {isOwner && (
+            {isManager && (
               <button onClick={toggleStatus}
                       className="text-xs px-2.5 py-1.5 rounded-lg bg-bg-2 border border-border text-secondary shrink-0 ml-2">
                 {session.status === 'aktiv' ? t('inv_finish') : t('inv_reopen')}
@@ -556,7 +556,7 @@ function SessionView({ session, articles, setArticles, setMoves, isOwner, onBack
                  style={{ width: `${pct}%`, background: session.status === 'aktiv' ? '#e8821c' : '#4caf6e' }} />
           </div>
           <div className="flex gap-1 mt-2">
-            {[['zaehlen', t('inv_tab_count'), 'scan'], ...(isOwner ? [['bericht', t('inv_tab_report'), 'chart']] : [])].map(([id, label, icon]) => (
+            {[['zaehlen', t('inv_tab_count'), 'scan'], ...(isManager ? [['bericht', t('inv_tab_report'), 'chart']] : [])].map(([id, label, icon]) => (
               <button key={id} onClick={() => setTab(id)}
                       className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
                         tab === id ? 'text-primary border-amber' : 'text-secondary border-transparent'
@@ -593,7 +593,7 @@ function SessionView({ session, articles, setArticles, setMoves, isOwner, onBack
             <p className="text-xs text-muted mt-1">{sessionDateRange(session)}</p>
             <p className="text-secondary text-sm mt-1">{erfasst} {t('ueb_of')} {articles.length} {t('ueb_articles_word')} {t('inv_captured')} ({pct}%)</p>
           </div>
-          {isOwner && (
+          {isManager && (
             <button onClick={toggleStatus}
                     className="px-4 py-2 rounded-xl text-sm bg-bg-2 border border-border text-secondary hover:bg-bg-3 transition-colors">
               {session.status === 'aktiv' ? t('inv_finish') : t('inv_reopen_full')}
@@ -605,7 +605,7 @@ function SessionView({ session, articles, setArticles, setMoves, isOwner, onBack
                style={{ width: `${pct}%`, background: session.status === 'aktiv' ? '#e8821c' : '#4caf6e' }} />
         </div>
         <div className="flex gap-1 border-b border-border mb-6">
-          {[['zaehlen', t('inv_tab_count'), 'scan'], ...(isOwner ? [['bericht', t('inv_tab_report'), 'chart']] : [])].map(([id, label, icon]) => (
+          {[['zaehlen', t('inv_tab_count'), 'scan'], ...(isManager ? [['bericht', t('inv_tab_report'), 'chart']] : [])].map(([id, label, icon]) => (
             <button key={id} onClick={() => setTab(id)}
                     className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                       tab === id ? 'text-primary border-amber' : 'text-secondary border-transparent hover:text-primary'
@@ -626,7 +626,7 @@ function SessionView({ session, articles, setArticles, setMoves, isOwner, onBack
 
 /* ══ MAIN ══ */
 export default function InventurPage({ articles, setArticles, setMoves }) {
-  const { isOwner } = useAuth()
+  const { isManager } = useAuth()
   const [sessions, setSessions] = useState([])
   const [activeId, setActiveId] = useState(null)
   const [loading, setLoading]   = useState(true)
@@ -653,11 +653,11 @@ export default function InventurPage({ articles, setArticles, setMoves }) {
 
   if (activeSession) return (
     <SessionView session={activeSession} articles={articles} setArticles={setArticles} setMoves={setMoves}
-                 isOwner={isOwner} onBack={() => setActiveId(null)} onRefresh={load} />
+                 isManager={isManager} onBack={() => setActiveId(null)} onRefresh={load} />
   )
 
   return (
-    <SessionList sessions={sessions} articles={articles} isOwner={isOwner}
+    <SessionList sessions={sessions} articles={articles} isManager={isManager}
                  onOpen={setActiveId} onRefresh={load} />
   )
 }

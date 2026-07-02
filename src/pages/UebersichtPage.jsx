@@ -282,7 +282,7 @@ function ArticleFormModal({ article, firma, onClose, onSaved }) {
 
 /* ══ MAIN PAGE ══ */
 export default function UebersichtPage({ articles, setArticles, setMoves }) {
-  const { isOwner } = useAuth()
+  const { isManager } = useAuth()
   const { t } = useLanguage()
   const [searchParams] = useSearchParams()
   const [search, setSearch]           = useState('')
@@ -297,8 +297,8 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
   const [firma, setFirma]             = useState(null)
 
   useEffect(() => {
-    if (isOwner) supabase.from('firmendaten').select('aenderungs_pin').eq('id', 1).single().then(({ data }) => setFirma(data))
-  }, [isOwner])
+    if (isManager) supabase.from('firmendaten').select('aenderungs_pin').eq('id', 1).single().then(({ data }) => setFirma(data))
+  }, [isManager])
 
   const kategorien  = useMemo(() => ['Alle', ...new Set(articles.map(a => a.kategorie))].sort(), [articles])
   const lagerorte   = useMemo(() => ['Alle', ...new Set(articles.map(a => a.lagerort))].sort(),  [articles])
@@ -355,7 +355,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                 {activeFilters > 0 && <span className="text-amber ml-1">· {activeFilters} {t('ueb_filters_short')}</span>}
               </p>
             </div>
-            {isOwner && (
+            {isManager && (
               <button onClick={openNew}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold shrink-0"
                       style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
@@ -440,7 +440,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                         <span className="font-mono text-secondary ml-auto shrink-0">{a.menge} {a.einheit}</span>
                       </div>
                     </div>
-                    {isOwner && (
+                    {isManager && (
                       <button onClick={() => openEdit(a)}
                               aria-label={t('ueb_edit_article_aria')}
                               className="p-2 rounded-lg bg-bg-2 border border-border shrink-0 active:scale-95 transition-transform">
@@ -465,7 +465,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
               {activeFilters > 0 && <span className="text-amber ml-2">· {activeFilters} {t('ueb_filters_active')}</span>}
             </p>
           </div>
-          {isOwner && (
+          {isManager && (
             <button onClick={openNew}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
                     style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
@@ -532,7 +532,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                 <thead>
                   <tr className="border-b border-border bg-bg-2">
                     {[t('ueb_col_number'), t('ueb_col_name'), t('ueb_col_location'), t('ueb_col_category'), t('ueb_col_qty'), t('ueb_col_status'),
-                      ...(isOwner ? [t('ueb_col_price'), t('ueb_col_supplier'), ''] : [])
+                      ...(isManager ? [t('ueb_col_price'), t('ueb_col_supplier'), ''] : [])
                     ].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs text-muted font-medium whitespace-nowrap">{h}</th>
                     ))}
@@ -549,9 +549,9 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                       <td className="px-4 py-3 text-secondary text-xs whitespace-nowrap">{a.kategorie}</td>
                       <td className="px-4 py-3 font-mono whitespace-nowrap">{a.menge} <span className="text-muted text-xs">{a.einheit}</span></td>
                       <td className="px-4 py-3 whitespace-nowrap"><StockBadge menge={a.menge} mindestbestand={a.mindestbestand} /></td>
-                      {isOwner && <td className="px-4 py-3 font-mono whitespace-nowrap text-xs">{fmt(a.preis)}</td>}
-                      {isOwner && <td className="px-4 py-3 text-secondary text-xs whitespace-nowrap">{a.lieferant}</td>}
-                      {isOwner && (
+                      {isManager && <td className="px-4 py-3 font-mono whitespace-nowrap text-xs">{fmt(a.preis)}</td>}
+                      {isManager && <td className="px-4 py-3 text-secondary text-xs whitespace-nowrap">{a.lieferant}</td>}
+                      {isManager && (
                         <td className="px-4 py-3">
                           <button onClick={() => openEdit(a)} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
                             <Icon name="edit" size={14} color="#9aa3ad" />
@@ -587,14 +587,14 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                       <span className="text-secondary">{t('ueb_col_location')}</span>
                       <span className="font-mono text-[11px]">{a.lagerort}</span>
                     </div>
-                    {isOwner && (
+                    {isManager && (
                       <div className="flex justify-between">
                         <span className="text-secondary">{t('ueb_col_price')}</span>
                         <span className="font-mono">{fmt(a.preis)}</span>
                       </div>
                     )}
                   </div>
-                  {isOwner && (
+                  {isManager && (
                     <button onClick={() => openEdit(a)}
                             className="w-full mt-3 flex items-center justify-center gap-1.5 bg-bg-2 border border-border rounded-lg py-1.5 text-xs text-secondary hover:bg-bg-3 transition-colors">
                       <Icon name="edit" size={12} color="#9aa3ad" /> {t('common_edit')}

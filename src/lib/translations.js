@@ -17,6 +17,7 @@ export const translations = {
     nav_einstellungen: 'Einstellungen',
 
     sidebar_owner: 'Inhaber',
+    sidebar_admin: 'Administration',
     sidebar_worker: 'Lagerarbeiter',
     sidebar_logout: 'Abmelden',
     sidebar_theme_light: 'Helles Design',
@@ -537,6 +538,7 @@ export const translations = {
     nav_einstellungen: 'Settings',
 
     sidebar_owner: 'Owner',
+    sidebar_admin: 'Administration',
     sidebar_worker: 'Warehouse Worker',
     sidebar_logout: 'Sign out',
     sidebar_theme_light: 'Light theme',

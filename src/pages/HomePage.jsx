@@ -154,7 +154,7 @@ const WORKER_LINKS = [
 ]
 
 export default function HomePage({ articles = [], moves = [] }) {
-  const { profile, isOwner } = useAuth()
+  const { profile, isManager } = useAuth()
   const { t } = useLanguage()
   const navigate = useNavigate()
   const [showToday, setShowToday] = useState(false)
@@ -162,13 +162,13 @@ export default function HomePage({ articles = [], moves = [] }) {
   // Owners get sent straight into "Bestellen" for that article with a
   // suggested quantity already filled in; workers can't create orders,
   // so they just see it in the article list instead.
-  const openLowStock = (a) => navigate(isOwner ? `/lieferanten?tab=bestellen&artikel=${a.id}` : '/uebersicht')
+  const openLowStock = (a) => navigate(isManager ? `/lieferanten?tab=bestellen&artikel=${a.id}` : '/uebersicht')
 
   const lowStock   = articles.filter(a => a.menge < a.mindestbestand)
   const totalValue = articles.reduce((s, a) => s + a.menge * a.preis, 0)
   const todayMoves = moves.filter(m => new Date(m.created_at).toDateString() === new Date().toDateString())
   const recentMoves = moves.slice(0, 5)
-  const quickLinks = isOwner ? OWNER_LINKS : WORKER_LINKS
+  const quickLinks = isManager ? OWNER_LINKS : WORKER_LINKS
 
   // A lightweight teaser of the Bestellungen/Aufträge dashboards —
   // just enough to summarize on Home without pulling in their full
@@ -176,7 +176,7 @@ export default function HomePage({ articles = [], moves = [] }) {
   const [bestellungen, setBestellungen] = useState([])
   const [projekte, setProjekte]         = useState([])
   useEffect(() => {
-    if (!isOwner) return
+    if (!isManager) return
     Promise.all([
       supabase.from('bestellungen').select('id, status, positionen:bestellung_positionen(menge, preis)').neq('status', 'eingetroffen'),
       supabase.from('projekte').select('id, name, status, rok, created_at, verkaufspreis, material:projekt_material(geplant_menge, preis)').in('status', ['geplant', 'aktiv', 'pausiert']),
@@ -184,7 +184,7 @@ export default function HomePage({ articles = [], moves = [] }) {
       setBestellungen(best ?? [])
       setProjekte(proj ?? [])
     })
-  }, [isOwner])
+  }, [isManager])
 
   const bestellwertUnterwegs = bestellungen.reduce((s, b) =>
     s + (b.positionen ?? []).reduce((s2, p) => s2 + p.menge * (p.preis ?? 0), 0), 0)
@@ -262,7 +262,7 @@ export default function HomePage({ articles = [], moves = [] }) {
           )}
 
           {/* Owner stats — 2x2 grid */}
-          {isOwner && (
+          {isManager && (
             <>
               <div className="grid grid-cols-2 gap-2">
                 {[
@@ -366,7 +366,7 @@ export default function HomePage({ articles = [], moves = [] }) {
               {t('home_welcome_back')}, {profile?.display_name?.split(' ')[0]}
             </h1>
             <p className="text-secondary text-sm">
-              {isOwner ? t('home_owner_subtitle') : t('home_worker_subtitle')}
+              {isManager ? t('home_owner_subtitle') : t('home_worker_subtitle')}
             </p>
           </div>
         </div>
@@ -422,7 +422,7 @@ export default function HomePage({ articles = [], moves = [] }) {
         )}
 
         {/* Owner stats + charts */}
-        {isOwner && (
+        {isManager && (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[

@@ -29,6 +29,7 @@ function UserForm({ newName, setNewName, newEmail, setNewEmail, newPassword, set
           <select value={newRole} onChange={e => setNewRole(e.target.value)}
                   className="w-full bg-bg-1 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber transition-colors">
             <option value="worker">{t('sidebar_worker')}</option>
+            <option value="admin">{t('sidebar_admin')}</option>
             <option value="owner">{t('sidebar_owner')}</option>
           </select>
         </div>
@@ -64,8 +65,10 @@ function UserList({ users, confirmDelete, setConfirmDelete, changeRole, deleteUs
           <select value={u.role} onChange={e => changeRole(u.id, e.target.value)}
                   className={`text-xs px-2 py-1.5 rounded-lg border outline-none transition-colors shrink-0 ${
                     u.role === 'owner' ? 'bg-amber-dim border-amber/40 text-amber' : 'bg-bg-2 border-border text-secondary'
-                  }`}>
+                  }`}
+                  style={u.role === 'admin' ? { background: '#4a90d91a', borderColor: '#4a90d966', color: '#4a90d9' } : undefined}>
             <option value="worker">{t('sidebar_worker')}</option>
+            <option value="admin">{t('sidebar_admin')}</option>
             <option value="owner">{t('sidebar_owner')}</option>
           </select>
           {confirmDelete === u.id ? (

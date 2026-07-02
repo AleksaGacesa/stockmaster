@@ -45,9 +45,13 @@ export function AuthProvider({ children }) {
   }
 
   const isOwner = profile?.role === 'owner'
+  const isAdmin = profile?.role === 'admin'
+  // Owner or admin — day-to-day business management access. Settings,
+  // the change PIN, and user management stay isOwner-only.
+  const isManager = isOwner || isAdmin
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut, isOwner }}>
+    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut, isOwner, isAdmin, isManager }}>
       {children}
     </AuthContext.Provider>
   )

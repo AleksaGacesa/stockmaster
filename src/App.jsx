@@ -29,10 +29,18 @@ function PageLoader() {
   )
 }
 
+// Strictly owner — settings, the change PIN, and user management.
 function OwnerRoute({ children }) {
   const { isOwner, loading } = useAuth()
   if (loading) return <PageLoader />
   return isOwner ? children : <Navigate to="/" replace />
+}
+
+// Owner or admin — day-to-day business management pages.
+function ManagerRoute({ children }) {
+  const { isManager, loading } = useAuth()
+  if (loading) return <PageLoader />
+  return isManager ? children : <Navigate to="/" replace />
 }
 
 function AppInner() {
@@ -108,35 +116,35 @@ function AppInner() {
           } />
 
           <Route path="/dashboard" element={
-            <OwnerRoute>
+            <ManagerRoute>
               <Suspense fallback={<PageLoader />}>
                 <DashboardPage articles={articles} moves={moves} />
               </Suspense>
-            </OwnerRoute>
+            </ManagerRoute>
           } />
 
           <Route path="/import" element={
-            <OwnerRoute>
+            <ManagerRoute>
               <Suspense fallback={<PageLoader />}>
                 <ImportPage setArticles={setArticles} />
               </Suspense>
-            </OwnerRoute>
+            </ManagerRoute>
           } />
 
           <Route path="/lieferanten" element={
-            <OwnerRoute>
+            <ManagerRoute>
               <Suspense fallback={<PageLoader />}>
                 <LieferantenPage articles={articles} setArticles={setArticles} setMoves={setMoves} />
               </Suspense>
-            </OwnerRoute>
+            </ManagerRoute>
           } />
 
           <Route path="/auftraege" element={
-            <OwnerRoute>
+            <ManagerRoute>
               <Suspense fallback={<PageLoader />}>
                 <AuftraegePage articles={articles} setArticles={setArticles} />
               </Suspense>
-            </OwnerRoute>
+            </ManagerRoute>
           } />
 
           <Route path="/projekte" element={
@@ -146,11 +154,11 @@ function AppInner() {
           } />
 
           <Route path="/administration" element={
-            <OwnerRoute>
+            <ManagerRoute>
               <Suspense fallback={<PageLoader />}>
                 <AdministrationPage articles={articles} />
               </Suspense>
-            </OwnerRoute>
+            </ManagerRoute>
           } />
 
           <Route path="/datenschutz" element={
