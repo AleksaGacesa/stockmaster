@@ -154,7 +154,7 @@ function SearchView({
     active ? 'border-amber text-amber bg-amber-dim' : 'border-border text-secondary bg-bg-2'
   }`
   return (
-    <Card className="w-full max-w-4xl mx-auto flex flex-col" style={{ height: 'min(680px, 82vh)' }}>
+    <Card className="w-full max-w-8xl mx-auto flex flex-col" style={{ height: 'min(1050px, 82vh)' }}>
       <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
         <h2 className="text-base font-semibold">{t('bew_search_article')}</h2>
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2">
@@ -197,7 +197,7 @@ function SearchView({
           <span className="text-xs text-muted ml-auto">{results.length} {t('ueb_articles_word')}</span>
         </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 grid grid-cols-1 sm:grid-cols-3 gap-2 content-start">
         {results.length === 0 ? (
           <p className="text-xs text-muted text-center py-6 col-span-2">{t('bew_no_articles_found')}</p>
         ) : (
