@@ -142,10 +142,14 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-         onClick={onClose}>
-      <div className="bg-bg-1 border border-border w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[92dvh] overflow-y-auto"
-           onClick={e => e.stopPropagation()}>
+    // No backdrop-click-to-close here (unlike other modals) — this
+    // form is long enough to need scrolling on mobile, and the crew
+    // section's number-input keyboard shrinks the viewport (dvh),
+    // which shifted the layout enough that a tap meant for a field
+    // could land on the backdrop instead and silently discard
+    // everything typed so far. Only the explicit X/Cancel dismiss it.
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-bg-1 border border-border w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[92dvh] overflow-y-auto">
         <div className="sm:hidden flex justify-center pt-3 pb-1">
           <div className="w-10 h-1 rounded-full bg-border" />
         </div>
