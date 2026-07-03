@@ -126,7 +126,7 @@ function FirmaCard({ firma, setFirma, onSave, saving, msg }) {
     { k: 'aenderungs_pin', label: t('set_change_pin'), ph: '1234', type: 'password' },
   ]
   return (
-    <Card className="p-4 sm:p-5">
+    <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
       <h2 className="font-semibold text-sm sm:text-base mb-1">{t('set_company_data')}</h2>
       <p className="text-xs text-secondary mb-4">{t('set_company_data_desc')}</p>
       {msg && (
@@ -346,7 +346,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
           <p className="text-secondary text-sm">{t('set_subtitle')}</p>
         </div>
         <div className="flex gap-5 flex-wrap items-start">
-          <Card className="p-5 flex-[2_1_420px]">
+          <Card className="p-5 flex-[2_1_420px] shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold">{t('set_user_mgmt')}</h2>
               {!showAddUser && (
@@ -385,7 +385,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
 
           <div className="flex-[1_1_280px] space-y-4">
             <FirmaCard firma={firma} setFirma={setFirma} onSave={saveFirma} saving={firmaSaving} msg={firmaMsg} />
-            <Card className="p-5">
+            <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
               <h2 className="font-semibold mb-2">{t('set_export_data')}</h2>
               <p className="text-xs text-secondary mb-4">{t('set_export_desc')}</p>
               <div className="flex flex-col gap-2">
@@ -399,7 +399,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
                 </button>
               </div>
             </Card>
-            <Card className="p-5">
+            <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
               <h2 className="font-semibold mb-2">{t('set_storage_location')}</h2>
               <p className="text-xs text-secondary leading-relaxed">
                 {t('set_storage_desc_mobile')}{t('set_storage_desc_extra')}

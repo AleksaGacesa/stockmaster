@@ -168,7 +168,7 @@ function SessionList({ sessions, articles, isManager, onOpen, onRefresh }) {
             {sessions.map(s => {
               const pct = articles.length > 0 ? Math.round(((s.erfasst_count ?? 0) / articles.length) * 100) : 0
               return (
-                <Card key={s.id} className="p-4 cursor-pointer hover:border-border-strong transition-colors"
+                <Card key={s.id} className="p-4 cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-border-strong hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200"
                      onClick={() => onOpen(s.id)}>
                   <div className="flex items-start justify-between mb-3">
                     <div>
@@ -409,7 +409,7 @@ function BerichtTab({ session, articles, setArticles, setMoves }) {
           { label: t('inv_report_value_diff'),       value: (totalDiff >= 0 ? '+' : '') + fmt(totalDiff),
             color: totalDiff < 0 ? 'text-red' : totalDiff > 0 ? 'text-green' : '' },
         ].map(s => (
-          <Card key={s.label} className="p-3 sm:p-4">
+          <Card key={s.label} className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="text-xs text-muted mb-1">{s.label}</div>
             <div className={`text-base sm:text-xl font-bold font-mono ${s.color}`}>{s.value}</div>
           </Card>
@@ -417,7 +417,7 @@ function BerichtTab({ session, articles, setArticles, setMoves }) {
       </div>
 
       {onlyDiffs.length > 0 && (
-        <Card className="p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3">
+        <Card className="p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <p className="text-sm text-secondary flex-1">
             {applied
               ? <span className="text-green flex items-center gap-2"><Icon name="check" size={15} color="#4caf6e" /> {t('inv_stock_applied')}</span>
@@ -470,7 +470,7 @@ function BerichtTab({ session, articles, setArticles, setMoves }) {
       </div>
 
       {/* Desktop table */}
-      <Card className="hidden sm:block overflow-hidden">
+      <Card className="hidden sm:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
         {rows.length === 0 ? (
           <div className="p-10 text-center text-muted text-sm">{t('inv_none_counted')}</div>
         ) : (
