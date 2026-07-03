@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useQrScanner } from '../hooks/useQrScanner'
@@ -40,6 +40,28 @@ function useBuchenLogic({ articles, onBooked, profile, projekte }) {
 
   const startScan = useCallback(() => { setStep('scan'); startScanning() }, [startScanning])
 
+  // Entering the wizard (scan/search/form) pushes one history entry, so
+  // the phone's back gesture steps back into the wizard's start screen
+  // instead of leaking through to whatever page was open before
+  // Bewegung (previously: straight back to Home, since none of these
+  // step changes are real route changes).
+  const pushedHistory = useRef(false)
+  useEffect(() => {
+    if (step === 'method') return
+    if (!pushedHistory.current) {
+      window.history.pushState({ bewegungWizard: true }, '')
+      pushedHistory.current = true
+    }
+    const onPopState = () => {
+      pushedHistory.current = false
+      stopScan(); setStep('method'); setSelected(null); setTyp(null)
+      setMenge(''); setProjekt(''); setProjektId(''); setError(null); setScanError(null); setSuccess(null)
+      setWarn(null)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [step, stopScan, setScanError])
+
   const kategorien  = useMemo(() => ['Alle', ...new Set(articles.map(a => a.kategorie).filter(Boolean))].sort(), [articles])
   const lagerorte   = useMemo(() => ['Alle', ...new Set(articles.map(a => a.lagerort).filter(Boolean))].sort(), [articles])
   const lieferanten = useMemo(() => ['Alle', ...new Set(articles.map(a => a.lieferant).filter(Boolean))].sort(), [articles])
@@ -71,6 +93,10 @@ function useBuchenLogic({ articles, onBooked, profile, projekte }) {
     stopScan(); setStep('method'); setSelected(null); setTyp(null)
     setMenge(''); setProjekt(''); setProjektId(''); setError(null); setScanError(null); setSuccess(null)
     setWarn(null)
+    // Closed via an in-app button rather than the phone's back gesture —
+    // consume the history entry we pushed so it doesn't linger as a
+    // dead "back" step the next time the user actually navigates back.
+    if (pushedHistory.current) { pushedHistory.current = false; window.history.back() }
   }, [stopScan, setScanError])
 
   // Actually performs the booking — called directly for the normal
@@ -150,6 +176,7 @@ function SearchView({
   kategorien, lagerorte, lieferanten, activeFilters, clearFilters,
 }) {
   const { t } = useLanguage()
+  const [showFilters, setShowFilters] = useState(false)
   const selClass = (active) => `text-xs rounded-lg px-2.5 py-2 border outline-none ${
     active ? 'border-amber text-amber bg-amber-dim' : 'border-border text-secondary bg-bg-2'
   }`
@@ -162,15 +189,25 @@ function SearchView({
         </button>
       </div>
       <div className="px-5 pt-4 pb-3 shrink-0 space-y-2">
-        <div className="relative">
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-            <Icon name="search" size={15} color="#6b7480" />
+        <div className="flex gap-2">
+          <div className="relative flex-1 min-w-0">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <Icon name="search" size={15} color="#6b7480" />
+            </div>
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
+                   placeholder={t('bew_search_ph')}
+                   className="w-full bg-bg-2 border border-border rounded-xl pl-10 pr-3 py-3 text-sm outline-none focus:border-amber" />
           </div>
-          <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
-                 placeholder={t('bew_search_ph')}
-                 className="w-full bg-bg-2 border border-border rounded-xl pl-10 pr-3 py-3 text-sm outline-none focus:border-amber" />
+          <button onClick={() => setShowFilters(s => !s)}
+                  aria-label={t('ueb_filter_aria')}
+                  className={`sm:hidden flex items-center justify-center gap-1 min-w-[44px] px-2.5 py-2 rounded-xl border text-xs transition-colors shrink-0 ${
+                    activeFilters > 0 ? 'border-amber text-amber bg-amber-dim' : 'border-border text-secondary bg-bg-2'
+                  }`}>
+            <Icon name="filter" size={14} color="currentColor" />
+            {activeFilters > 0 && <span className="font-semibold">{activeFilters}</span>}
+          </button>
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-wrap gap-2 items-center`}>
           <select value={filterKat} onChange={e => setFilterKat(e.target.value)} className={selClass(filterKat !== 'Alle')}>
             <option value="Alle">{t('ueb_all_categories')}</option>
             {kategorien.filter(k => k !== 'Alle').map(k => <option key={k}>{k}</option>)}
