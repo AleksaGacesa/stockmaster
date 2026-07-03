@@ -547,7 +547,7 @@ function VerlaufTab({ moves }) {
           { label: t('bew_incoming_plural'), value: moves.filter(m => m.typ === 'eingang').length, color: 'text-green' },
           { label: t('bew_outgoing_plural'), value: moves.filter(m => m.typ === 'ausgang').length, color: 'text-red' },
         ].map(s => (
-          <Card key={s.label} className="p-3 sm:p-4">
+          <Card key={s.label} className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="text-xs text-muted mb-1">{s.label}</div>
             <div className={`text-lg sm:text-xl font-bold font-mono ${s.color}`}>{s.value}</div>
           </Card>
@@ -555,7 +555,7 @@ function VerlaufTab({ moves }) {
       </div>
 
       {/* Filter */}
-      <Card className="p-3 flex flex-wrap gap-2">
+      <Card className="p-3 flex flex-wrap gap-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
         <div className="relative flex-1 min-w-[160px]">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
             <Icon name="search" size={13} color="#6b7480" />
@@ -600,7 +600,7 @@ function VerlaufTab({ moves }) {
       </div>
 
       {/* Desktop table */}
-      <Card className="hidden sm:block overflow-hidden">
+      <Card className="hidden sm:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
         {filtered.length === 0 ? (
           <div className="p-10 text-center text-muted text-sm">{t('bew_no_movements_found')}</div>
         ) : (

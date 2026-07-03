@@ -1003,7 +1003,7 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
           {filtered.map(l => {
             const knapp = lowStockForLieferant(articles, l)
             return (
-              <Card key={l.id} className="p-4">
+              <Card key={l.id} className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] sm:hover:border-border-strong sm:hover:-translate-y-0.5 sm:hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200">
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-10 h-10 rounded-full bg-bg-2 text-amber font-semibold text-sm flex items-center justify-center shrink-0">
                     {l.name.slice(0, 2).toUpperCase()}
@@ -1107,7 +1107,7 @@ function BestellungenTab({ bestellungen, lieferanten, onOpenDetail, initialFilte
               </div>
             ))}
           </div>
-          <Card className="hidden sm:block overflow-hidden">
+          <Card className="hidden sm:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead>

@@ -1038,25 +1038,25 @@ export default function AuftraegePage({ articles, setArticles }) {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-5">
-        <Card className="p-3 sm:p-4">
+        <Card className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="text-xs text-muted mb-1">{t('ad_active_projects')}</div>
           <div className="text-lg sm:text-xl font-bold font-mono"><CountUp value={aktiveCount} /></div>
         </Card>
-        <Card className="p-3 sm:p-4">
+        <Card className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="text-xs text-muted mb-1">{t('ad_late')}</div>
           <div className={`text-lg sm:text-xl font-bold font-mono ${kasneCount > 0 ? 'text-red' : ''}`}><CountUp value={kasneCount} /></div>
         </Card>
-        <Card className="p-3 sm:p-4">
+        <Card className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="text-xs text-muted mb-1">{t('ad_expected_profit')}</div>
           <div className="text-lg sm:text-xl font-bold font-mono"><CountUp value={erwarteterGewinn} format={fmt} /></div>
         </Card>
-        <Card className="p-3 sm:p-4">
+        <Card className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="text-xs text-muted mb-1">{t('ad_realized_profit')}</div>
           <div className="text-lg sm:text-xl font-bold font-mono text-green"><CountUp value={realisierterGewinn} format={fmt} /></div>
         </Card>
       </div>
 
-      <Card className="p-3 flex flex-wrap gap-2 items-center mb-5">
+      <Card className="p-3 flex flex-wrap gap-2 items-center mb-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
         <div className="relative flex-1 min-w-[160px]">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
             <Icon name="search" size={13} color="#6b7480" />
@@ -1080,7 +1080,7 @@ export default function AuftraegePage({ articles, setArticles }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(p => {
             return (
-              <Card key={p.id} className="p-4 cursor-pointer hover:border-border-strong transition-colors"
+              <Card key={p.id} className="p-4 cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-border-strong sm:hover:-translate-y-0.5 sm:hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200"
                     onClick={() => setActiveId(p.id)}>
                 <div className="flex items-start justify-between mb-2 gap-2">
                   <div className="min-w-0">
