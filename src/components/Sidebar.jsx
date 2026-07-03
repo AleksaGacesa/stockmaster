@@ -98,7 +98,7 @@ export default function Sidebar({ open, onClose, lowStockCount }) {
         </nav>
 
         {/* Team status — who's currently logged in, live */}
-        {isManager && roster.length > 0 && (
+        {roster.length > 0 && (
           <div className="px-3 pt-2 pb-1 border-t border-border">
             <div className="flex items-center justify-between px-1 pt-2 pb-1.5">
               <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t('sidebar_team_title')}</span>
