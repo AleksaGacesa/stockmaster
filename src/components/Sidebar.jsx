@@ -2,9 +2,11 @@ import { NavLink } from 'react-router-dom'
 import Icon from './Icon'
 import Logo from './Logo'
 import Tagline from './Tagline'
+import StatusDot from './StatusDot'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../hooks/useTheme'
 import { useLanguage } from '../hooks/useLanguage'
+import { useOnlinePresence } from '../hooks/useOnlinePresence'
 
 const NAV_ITEMS = [
   { to: '/',             labelKey: 'nav_home',        icon: 'home' },
@@ -24,9 +26,11 @@ export default function Sidebar({ open, onClose, lowStockCount }) {
   const { profile, isOwner, isAdmin, isManager, signOut } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { lang, toggleLang, t } = useLanguage()
+  const { roster, onlineIds } = useOnlinePresence()
   const visible = NAV_ITEMS.filter(i =>
     (!i.ownerOnly || isOwner) && (!i.managerOnly || isManager) && (!i.plainWorkerOnly || !isManager)
   )
+  const roleLabel = (role) => role === 'owner' ? t('sidebar_owner') : role === 'admin' ? t('sidebar_admin') : t('sidebar_worker')
 
   return (
     <>
@@ -92,6 +96,37 @@ export default function Sidebar({ open, onClose, lowStockCount }) {
             </NavLink>
           ))}
         </nav>
+
+        {/* Team status — who's currently logged in, live */}
+        {isManager && roster.length > 0 && (
+          <div className="px-3 pt-2 pb-1 border-t border-border">
+            <div className="flex items-center justify-between px-1 pt-2 pb-1.5">
+              <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t('sidebar_team_title')}</span>
+              <span className="text-[11px] text-muted font-mono">
+                {roster.filter(u => onlineIds.has(String(u.id))).length}/{roster.length}
+              </span>
+            </div>
+            <div className="max-h-36 overflow-y-auto space-y-0.5">
+              {[...roster]
+                .sort((a, b) => {
+                  const aOn = onlineIds.has(String(a.id)), bOn = onlineIds.has(String(b.id))
+                  return aOn === bOn ? 0 : aOn ? -1 : 1
+                })
+                .map(u => {
+                  const online = onlineIds.has(String(u.id))
+                  return (
+                    <div key={u.id} className="flex items-center gap-2 px-1 py-1">
+                      <StatusDot color={online ? '#4caf6e' : '#6b7480'} pulse={online} size={7} />
+                      <span className={`flex-1 min-w-0 truncate text-xs ${online ? 'text-primary' : 'text-muted'}`}>
+                        {u.display_name}
+                      </span>
+                      <span className="text-[10px] text-muted shrink-0">{roleLabel(u.role)}</span>
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        )}
 
         {/* Theme / language toggles */}
         <div className="px-3 pt-2">
