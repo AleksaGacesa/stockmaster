@@ -6,8 +6,20 @@ import { useLanguage } from '../hooks/useLanguage'
 import Card from '../components/Card'
 import Icon from '../components/Icon'
 import StockBadge from '../components/StockBadge'
+import { printQrLabels } from '../lib/printQrLabels'
 
 const fmt = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n)
+
+function SelectCheckbox({ checked, onClick }) {
+  return (
+    <button onClick={onClick}
+            className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+              checked ? 'bg-amber border-amber' : 'border-border bg-bg-2'
+            }`}>
+      {checked && <Icon name="check" size={12} color="#181c20" />}
+    </button>
+  )
+}
 
 /* ══ ARTICLE FORM MODAL ══ */
 function ArticleFormModal({ article, firma, onClose, onSaved }) {
@@ -295,6 +307,8 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
   const [editingArticle, setEditingArticle] = useState(null)
   const [showModal, setShowModal]     = useState(false)
   const [firma, setFirma]             = useState(null)
+  const [selectMode, setSelectMode]   = useState(false)
+  const [selected, setSelected]       = useState(() => new Set())
 
   useEffect(() => {
     if (isManager) supabase.from('firmendaten').select('aenderungs_pin').eq('id', 1).single().then(({ data }) => setFirma(data))
@@ -321,6 +335,18 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
   const clearFilters  = () => {
     setFilterKat('Alle'); setFilterLager('Alle'); setFilterLief('Alle')
     setFilterStock('Alle'); setSearch('')
+  }
+
+  const toggleSelectMode = () => { setSelectMode(s => !s); setSelected(new Set()) }
+  const toggleSelected = (id) => setSelected(s => {
+    const next = new Set(s)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const selectAllFiltered = () => setSelected(new Set(filtered.map(a => a.id)))
+  const printSelectedQr = () => {
+    const items = articles.filter(a => selected.has(a.id)).map(a => ({ nummer: a.nummer, name: a.name }))
+    printQrLabels(items)
   }
 
   const openNew  = () => { setEditingArticle(null); setShowModal(true) }
@@ -351,17 +377,36 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
             <div>
               <h1 className="text-base font-semibold leading-tight">{t('ueb_title')}</h1>
               <p className="text-xs text-secondary">
-                {filtered.length} {t('ueb_of')} {articles.length}
-                {activeFilters > 0 && <span className="text-amber ml-1">· {activeFilters} {t('ueb_filters_short')}</span>}
+                {selectMode
+                  ? `${selected.size} ${t('ueb_selected_word')}`
+                  : <>{filtered.length} {t('ueb_of')} {articles.length}
+                      {activeFilters > 0 && <span className="text-amber ml-1">· {activeFilters} {t('ueb_filters_short')}</span>}
+                    </>}
               </p>
             </div>
-            {isManager && (
-              <button onClick={openNew}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold shrink-0"
-                      style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-                <Icon name="plus" size={13} color="#181c20" /> {t('common_new')}
-              </button>
-            )}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {selectMode ? (
+                <button onClick={toggleSelectMode}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-bg-2 border border-border text-secondary">
+                  <Icon name="x" size={13} color="#9aa3ad" /> {t('common_cancel')}
+                </button>
+              ) : (
+                <>
+                  <button onClick={toggleSelectMode}
+                          aria-label={t('ueb_select_mode_aria')}
+                          className="flex items-center justify-center p-2 rounded-xl text-xs bg-bg-2 border border-border text-secondary">
+                    <Icon name="clipboard" size={15} color="#9aa3ad" />
+                  </button>
+                  {isManager && (
+                    <button onClick={openNew}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+                            style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                      <Icon name="plus" size={13} color="#181c20" /> {t('common_new')}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
           {/* Search + filter toggle */}
@@ -427,8 +472,13 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
           ) : (
             <div className="space-y-1.5">
               {filtered.map(a => (
-                <div key={a.id} className="bg-bg-1 border border-border rounded-xl px-3 py-2.5">
+                <div key={a.id}
+                     onClick={() => selectMode && toggleSelected(a.id)}
+                     className={`bg-bg-1 border rounded-xl px-3 py-2.5 ${
+                       selectMode && selected.has(a.id) ? 'border-amber' : 'border-border'
+                     }`}>
                   <div className="flex items-center gap-2">
+                    {selectMode && <SelectCheckbox checked={selected.has(a.id)} onClick={() => toggleSelected(a.id)} />}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-medium text-sm truncate flex-1">{a.name}</span>
@@ -440,7 +490,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                         <span className="font-mono text-secondary ml-auto shrink-0">{a.menge} {a.einheit}</span>
                       </div>
                     </div>
-                    {isManager && (
+                    {!selectMode && isManager && (
                       <button onClick={() => openEdit(a)}
                               aria-label={t('ueb_edit_article_aria')}
                               className="p-2 rounded-lg bg-bg-2 border border-border shrink-0 active:scale-95 transition-transform">
@@ -453,6 +503,20 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
             </div>
           )}
         </div>
+
+        {selectMode && (
+          <div className="sticky bottom-0 z-10 bg-bg-0 border-t border-border px-3 py-2.5 flex items-center gap-2">
+            <button onClick={selectAllFiltered}
+                    className="text-xs text-secondary underline decoration-dotted shrink-0">
+              {t('ueb_select_all')}
+            </button>
+            <button onClick={printSelectedQr} disabled={selected.size === 0}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40"
+                    style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+              <Icon name="printer" size={15} color="#181c20" /> {t('ueb_print_qr_labels')}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ══ DESKTOP ══ */}
@@ -461,17 +525,46 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('ueb_title')}</h1>
             <p className="text-secondary text-sm">
-              {filtered.length} {t('ueb_of')} {articles.length} {t('ueb_articles_word')}
-              {activeFilters > 0 && <span className="text-amber ml-2">· {activeFilters} {t('ueb_filters_active')}</span>}
+              {selectMode
+                ? `${selected.size} ${t('ueb_selected_word')}`
+                : <>{filtered.length} {t('ueb_of')} {articles.length} {t('ueb_articles_word')}
+                    {activeFilters > 0 && <span className="text-amber ml-2">· {activeFilters} {t('ueb_filters_active')}</span>}
+                  </>}
             </p>
           </div>
-          {isManager && (
-            <button onClick={openNew}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                    style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-              <Icon name="plus" size={15} color="#181c20" /> {t('ueb_new_article')}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {selectMode ? (
+              <>
+                <button onClick={selectAllFiltered}
+                        className="text-xs text-secondary underline decoration-dotted">
+                  {t('ueb_select_all')}
+                </button>
+                <button onClick={printSelectedQr} disabled={selected.size === 0}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40"
+                        style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                  <Icon name="printer" size={15} color="#181c20" /> {t('ueb_print_qr_labels')}
+                </button>
+                <button onClick={toggleSelectMode}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-secondary">
+                  <Icon name="x" size={14} color="#9aa3ad" /> {t('common_cancel')}
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={toggleSelectMode}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-secondary">
+                  <Icon name="clipboard" size={14} color="#9aa3ad" /> {t('ueb_select_mode')}
+                </button>
+                {isManager && (
+                  <button onClick={openNew}
+                          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                          style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                    <Icon name="plus" size={15} color="#181c20" /> {t('ueb_new_article')}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         <Card className="p-3 mb-5">
@@ -531,16 +624,25 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border bg-bg-2">
-                    {[t('ueb_col_number'), t('ueb_col_name'), t('ueb_col_location'), t('ueb_col_category'), t('ueb_col_qty'), t('ueb_col_status'),
+                    {[...(selectMode ? [''] : []), t('ueb_col_number'), t('ueb_col_name'), t('ueb_col_location'), t('ueb_col_category'), t('ueb_col_qty'), t('ueb_col_status'),
                       ...(isManager ? [t('ueb_col_price'), t('ueb_col_supplier'), ''] : [])
-                    ].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs text-muted font-medium whitespace-nowrap">{h}</th>
+                    ].map((h, i) => (
+                      <th key={i} className="text-left px-4 py-3 text-xs text-muted font-medium whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map(a => (
-                    <tr key={a.id} className="border-b border-border hover:bg-bg-2/50 transition-colors">
+                    <tr key={a.id}
+                        onClick={() => selectMode && toggleSelected(a.id)}
+                        className={`border-b border-border transition-colors ${
+                          selectMode ? 'cursor-pointer' : ''
+                        } ${selectMode && selected.has(a.id) ? 'bg-amber-dim' : 'hover:bg-bg-2/50'}`}>
+                      {selectMode && (
+                        <td className="px-4 py-3">
+                          <SelectCheckbox checked={selected.has(a.id)} onClick={() => toggleSelected(a.id)} />
+                        </td>
+                      )}
                       <td className="px-4 py-3 font-mono text-amber font-medium text-xs whitespace-nowrap">{a.nummer}</td>
                       <td className="px-4 py-3 font-medium">{a.name}</td>
                       <td className="px-4 py-3">
@@ -553,9 +655,11 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                       {isManager && <td className="px-4 py-3 text-secondary text-xs whitespace-nowrap">{a.lieferant}</td>}
                       {isManager && (
                         <td className="px-4 py-3">
-                          <button onClick={() => openEdit(a)} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
-                            <Icon name="edit" size={14} color="#9aa3ad" />
-                          </button>
+                          {!selectMode && (
+                            <button onClick={() => openEdit(a)} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
+                              <Icon name="edit" size={14} color="#9aa3ad" />
+                            </button>
+                          )}
                         </td>
                       )}
                     </tr>
@@ -567,7 +671,16 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {filtered.map(a => (
-              <Card key={a.id} className="overflow-hidden">
+              <Card key={a.id}
+                    onClick={selectMode ? () => toggleSelected(a.id) : undefined}
+                    className={`overflow-hidden relative ${
+                      selectMode && selected.has(a.id) ? 'border-amber' : ''
+                    }`}>
+                {selectMode && (
+                  <div className="absolute top-2 left-2 z-10">
+                    <SelectCheckbox checked={selected.has(a.id)} onClick={() => toggleSelected(a.id)} />
+                  </div>
+                )}
                 <div className="aspect-video bg-bg-2 overflow-hidden">
                   <img src={a.bild} alt={a.name} className="w-full h-full object-cover"
                        onError={e => { e.target.style.display = 'none' }} />
@@ -594,7 +707,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                       </div>
                     )}
                   </div>
-                  {isManager && (
+                  {!selectMode && isManager && (
                     <button onClick={() => openEdit(a)}
                             className="w-full mt-3 flex items-center justify-center gap-1.5 bg-bg-2 border border-border rounded-lg py-1.5 text-xs text-secondary hover:bg-bg-3 transition-colors">
                       <Icon name="edit" size={12} color="#9aa3ad" /> {t('common_edit')}

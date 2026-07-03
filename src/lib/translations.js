@@ -148,6 +148,11 @@ export const translations = {
     ueb_qr_hide: 'Ausblenden',
     ueb_qr_show: 'Anzeigen',
     ueb_qr_generating: 'Wird erstellt…',
+    ueb_select_mode: 'Auswählen',
+    ueb_select_mode_aria: 'Mehrere Artikel auswählen',
+    ueb_selected_word: 'ausgewählt',
+    ueb_select_all: 'Alle auswählen',
+    ueb_print_qr_labels: 'QR-Etiketten drucken',
 
     // Dashboard
     dash_stock_by_category: 'Lagerwert nach Kategorie',
@@ -434,6 +439,7 @@ export const translations = {
     lief_no_supplier_yet: 'Es ist noch kein Lieferant angelegt. Bitte zuerst einen Lieferanten anlegen.',
     lief_create_supplier: 'Lieferant anlegen',
     lief_as_pdf: 'Als PDF',
+    lief_print_qr_labels: 'QR-Etiketten drucken',
 
     // Excel Import
     imp_title: 'Excel Import',
@@ -674,6 +680,11 @@ export const translations = {
     ueb_qr_hide: 'Hide',
     ueb_qr_show: 'Show',
     ueb_qr_generating: 'Generating…',
+    ueb_select_mode: 'Select',
+    ueb_select_mode_aria: 'Select multiple articles',
+    ueb_selected_word: 'selected',
+    ueb_select_all: 'Select all',
+    ueb_print_qr_labels: 'Print QR labels',
 
     // Dashboard
     dash_stock_by_category: 'Stock value by category',
@@ -960,6 +971,7 @@ export const translations = {
     lief_no_supplier_yet: 'No supplier has been created yet. Please create a supplier first.',
     lief_create_supplier: 'Create Supplier',
     lief_as_pdf: 'As PDF',
+    lief_print_qr_labels: 'Print QR labels',
 
     // Excel Import
     imp_title: 'Excel Import',

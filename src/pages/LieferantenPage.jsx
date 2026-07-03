@@ -11,6 +11,7 @@ import {
   fmt, fmtDt, STATUS_META, bestellungTotal, bestellungBrutto,
   buildLastPurchaseMap, buildUnterwegsMap, daysAgo, lowStockForLieferant,
 } from '../lib/bestellungHelpers'
+import { printQrLabels } from '../lib/printQrLabels'
 
 function StatusBadge({ status }) {
   const { t } = useLanguage()
@@ -735,6 +736,10 @@ function BestellungDetail({ bestellung, onBack, onRefresh, setArticles, setMoves
     onRefresh()
   }
 
+  const printPositionenQr = () => {
+    printQrLabels(positionen.map(p => ({ nummer: p.artikel_nummer, name: p.artikel_name })))
+  }
+
   const deleteBestellung = async () => {
     setBusy(true); setError(null)
     const { error: err } = await supabase.from('bestellungen').delete().eq('id', bestellung.id)
@@ -868,6 +873,12 @@ function BestellungDetail({ bestellung, onBack, onRefresh, setArticles, setMoves
                 className="flex items-center gap-2 bg-bg-2 border border-border text-sm px-4 py-2.5 rounded-xl hover:bg-bg-3 transition-colors">
           <Icon name="download" size={15} color="#9aa3ad" /> {t('lief_as_pdf')}
         </button>
+        {positionen.length > 0 && (
+          <button onClick={printPositionenQr}
+                  className="flex items-center gap-2 bg-bg-2 border border-border text-sm px-4 py-2.5 rounded-xl hover:bg-bg-3 transition-colors">
+            <Icon name="scan" size={15} color="#9aa3ad" /> {t('lief_print_qr_labels')}
+          </button>
+        )}
       </div>
 
       {confirmAction ? (
