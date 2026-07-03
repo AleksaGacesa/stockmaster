@@ -567,7 +567,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
           </div>
         </div>
 
-        <Card className="p-3 mb-5">
+        <Card className="p-3 mb-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="flex flex-wrap gap-2 items-center">
             <div className="relative flex-1 min-w-[180px]">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
@@ -619,7 +619,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
             <p className="text-secondary text-sm mt-3">{t('ueb_no_articles')}</p>
           </Card>
         ) : view === 'list' ? (
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead>
@@ -673,7 +673,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
             {filtered.map(a => (
               <Card key={a.id}
                     onClick={selectMode ? () => toggleSelected(a.id) : undefined}
-                    className={`overflow-hidden relative ${
+                    className={`overflow-hidden relative shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-border-strong hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200 ${
                       selectMode && selected.has(a.id) ? 'border-amber' : ''
                     }`}>
                 {selectMode && (

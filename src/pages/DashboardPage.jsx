@@ -222,10 +222,11 @@ function MagazinDashboard({ articles, moves }) {
       <div className="hidden sm:block space-y-6">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {stats.map(s => (
-            <Card key={s.label} className="p-4">
+            <Card key={s.label} className="p-4 border-t-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]" style={{ borderTopColor: s.color }}>
               <div className="flex items-start justify-between mb-2">
                 <span className="text-xs text-secondary">{s.label}</span>
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: s.color + '1a' }}>
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                     style={{ background: `linear-gradient(135deg, ${s.color}2e, ${s.color}0f)` }}>
                   <Icon name={s.icon} size={14} color={s.color} />
                 </div>
               </div>
@@ -235,7 +236,7 @@ function MagazinDashboard({ articles, moves }) {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="p-5">
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <h3 className="font-medium text-sm mb-4">{t('dash_stock_by_category')}</h3>
             <div className="flex items-center gap-5 flex-wrap">
               <DonutChart data={donutData} size={150} />
@@ -251,7 +252,7 @@ function MagazinDashboard({ articles, moves }) {
             </div>
           </Card>
 
-          <Card className="p-5">
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-medium text-sm">{t('dash_movements_7_days')}</h3>
               <div className="flex gap-3 text-xs text-muted">
