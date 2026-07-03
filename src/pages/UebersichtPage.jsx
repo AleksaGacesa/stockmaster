@@ -624,7 +624,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border bg-bg-2">
-                    {[...(selectMode ? [''] : []), t('ueb_col_number'), t('ueb_col_name'), t('ueb_col_location'), t('ueb_col_category'), t('ueb_col_qty'), t('ueb_col_status'),
+                    {[...(selectMode ? [''] : []), t('ueb_col_number'), t('ueb_col_name'), t('ueb_col_status'), t('ueb_col_location'), t('ueb_col_category'), t('ueb_col_qty'),
                       ...(isManager ? [t('ueb_col_price'), t('ueb_col_supplier'), ''] : [])
                     ].map((h, i) => (
                       <th key={i} className="text-left px-4 py-3 text-xs text-muted font-medium whitespace-nowrap">{h}</th>
@@ -645,12 +645,12 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                       )}
                       <td className="px-4 py-3 font-mono text-amber font-medium text-xs whitespace-nowrap">{a.nummer}</td>
                       <td className="px-4 py-3 font-medium">{a.name}</td>
+                      <td className="px-4 py-3 whitespace-nowrap"><StockBadge menge={a.menge} mindestbestand={a.mindestbestand} /></td>
                       <td className="px-4 py-3">
                         <span className="bg-bg-2 border border-border rounded-md px-2 py-0.5 text-xs font-mono">{a.lagerort}</span>
                       </td>
                       <td className="px-4 py-3 text-secondary text-xs whitespace-nowrap">{a.kategorie}</td>
                       <td className="px-4 py-3 font-mono whitespace-nowrap">{a.menge} <span className="text-muted text-xs">{a.einheit}</span></td>
-                      <td className="px-4 py-3 whitespace-nowrap"><StockBadge menge={a.menge} mindestbestand={a.mindestbestand} /></td>
                       {isManager && <td className="px-4 py-3 font-mono whitespace-nowrap text-xs">{fmt(a.preis)}</td>}
                       {isManager && <td className="px-4 py-3 text-secondary text-xs whitespace-nowrap">{a.lieferant}</td>}
                       {isManager && (

@@ -76,6 +76,21 @@ function AppInner() {
     return () => supabase.removeChannel(channel)
   }, [user])
 
+  // Real-time updates for warenbewegungen — so a booking made on one
+  // device (e.g. phone) shows up in Verlauf on another (e.g. desktop)
+  // without a manual refresh.
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel('warenbewegungen-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'warenbewegungen' }, () => {
+        supabase.from('warenbewegungen').select('*, projekte(dokument_nr)').order('created_at', { ascending: false }).limit(200)
+          .then(({ data }) => { if (data) setMoves(data) })
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [user])
+
   if (loading) return (
     <div className="min-h-screen bg-bg-0 flex items-center justify-center">
       <div className="text-center">

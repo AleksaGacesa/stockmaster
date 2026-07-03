@@ -15,8 +15,8 @@ const NAV_ITEMS = [
   { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', plainWorkerOnly: true },
   { to: '/lieferanten',  labelKey: 'nav_lieferanten', icon: 'building', managerOnly: true },
   { to: '/inventur',     labelKey: 'nav_inventur',    icon: 'filter' },
-  { to: '/import',       labelKey: 'nav_import',      icon: 'upload',   managerOnly: true, desktopOnly: true },
   { to: '/administration', labelKey: 'nav_administration', icon: 'download', managerOnly: true, desktopOnly: true },
+  { to: '/import',       labelKey: 'nav_import',      icon: 'upload',   managerOnly: true, desktopOnly: true },
   { to: '/einstellungen',labelKey: 'nav_einstellungen', icon: 'settings', ownerOnly: true },
 ]
 
