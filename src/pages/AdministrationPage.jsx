@@ -44,13 +44,35 @@ const movementProjectLabel = (m) => m.projekte?.dokument_nr
 const loadPdfLibs = () => Promise.all([import('jspdf'), import('jspdf-autotable')])
   .then(([{ jsPDF }, { default: autoTable }]) => ({ jsPDF, autoTable }))
 
+// A lightweight, per-device log of what's been exported from this
+// browser — not a synced/cross-device history (that would need a
+// dedicated table + real automation, see Phase 2), just enough to
+// answer "did I already pull this today" without leaving the page.
+const HISTORY_KEY = 'adm_report_history'
+const REPORT_META = {
+  lieferanten:    { icon: 'building',  color: '#9b6bd9', label: 'Lieferantenübersicht' },
+  lagerbewertung: { icon: 'box',       color: '#4a90d9', label: 'Lagerbewertung' },
+  inventur:       { icon: 'filter',    color: '#4caf6e', label: 'Inventurliste' },
+  wareneingang:   { icon: 'truck',     color: '#e8821c', label: 'Wareneingang' },
+  projektbericht: { icon: 'clipboard', color: '#d96b8f', label: 'Projektbericht' },
+  jahresbericht:  { icon: 'chart',     color: '#3fb6c4', label: 'Jahresbericht' },
+  tagesbewegung:  { icon: 'truck',     color: '#e8821c', label: 'Artikel Tagesbewegung' },
+  artikel:        { icon: 'package',   color: '#4caf6e', label: 'Artikel' },
+  bestellungen:   { icon: 'truck',     color: '#4a90d9', label: 'Bestellungen' },
+  projekte:       { icon: 'clipboard', color: '#d96b8f', label: 'Projekte' },
+  bewegungen:     { icon: 'refresh',   color: '#e8821c', label: 'Lagerbewegungen' },
+  zip:            { icon: 'download',  color: '#e8821c', label: 'Steuerberater-Export' },
+}
+
 /* ══ EXPORT CARD ══ */
-function ExportButton({ icon, title, desc, onClick, disabled }) {
+function ExportButton({ icon, title, desc, onClick, disabled, color = '#e8821c' }) {
   return (
     <button onClick={onClick} disabled={disabled}
-            className="w-full flex items-center gap-3 p-4 bg-bg-2 border border-border rounded-xl hover:border-amber transition-colors text-left disabled:opacity-50 disabled:pointer-events-none">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-bg-3">
-        <Icon name={icon} size={18} color="#e8821c" />
+            style={{ '--accent': color }}
+            className="w-full flex items-center gap-3 p-4 bg-bg-2 border border-border rounded-xl hover:border-[var(--accent)] hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200 text-left disabled:opacity-50 disabled:pointer-events-none disabled:hover:translate-y-0 disabled:hover:shadow-none">
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
+           style={{ background: `linear-gradient(135deg, ${color}2e, ${color}0f)`, '--tw-ring-color': `${color}33` }}>
+        <Icon name={icon} size={18} color={color} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm">{title}</div>
@@ -111,11 +133,12 @@ function SearchablePicker({ value, onChange, options, placeholder }) {
   )
 }
 
-function PickerRow({ icon, title, options, placeholder, value, onChange, onExport, disabled }) {
+function PickerRow({ icon, title, options, placeholder, value, onChange, onExport, disabled, color = '#e8821c' }) {
   return (
     <div className="flex items-center gap-2 p-4 bg-bg-2 border border-border rounded-xl mt-2.5 first:mt-0">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-bg-3">
-        <Icon name={icon} size={18} color="#e8821c" />
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
+           style={{ background: `linear-gradient(135deg, ${color}2e, ${color}0f)`, '--tw-ring-color': `${color}33` }}>
+        <Icon name={icon} size={18} color={color} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm mb-1">{title}</div>
@@ -125,6 +148,88 @@ function PickerRow({ icon, title, options, placeholder, value, onChange, onExpor
               className="p-2.5 rounded-lg bg-bg-3 border border-border disabled:opacity-40 disabled:pointer-events-none shrink-0">
         <Icon name="download" size={15} color="#9aa3ad" />
       </button>
+    </div>
+  )
+}
+
+/* ══ HISTORY PANEL — "Vorschau & Schnellzugriff": a real, per-device
+   log of exports generated from this browser (localStorage-backed).
+   Not cross-device/synced — that needs a real backend job, see the
+   automatic-export settings which are intentionally not built yet. ══ */
+function relativeTime(iso, t) {
+  const diffMin = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (diffMin < 1) return t('adm_history_just_now')
+  if (diffMin < 60) return `${diffMin} ${t('adm_history_min_ago')}`
+  const diffH = Math.round(diffMin / 60)
+  if (diffH < 24) return `${diffH} ${t('adm_history_hours_ago')}`
+  return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+}
+
+function HistoryPanel({ history, onRemove }) {
+  const { t } = useLanguage()
+  return (
+    <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <h2 className="font-semibold text-sm mb-3.5">{t('adm_history_title')}</h2>
+      {history.length === 0 ? (
+        <p className="text-xs text-muted">{t('adm_history_empty')}</p>
+      ) : (
+        <div className="space-y-1.5">
+          {history.map(entry => {
+            const meta = REPORT_META[entry.type] ?? { icon: 'download', color: '#9aa3ad', label: entry.type }
+            return (
+              <div key={entry.id} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-bg-2 transition-colors group">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                     style={{ background: `linear-gradient(135deg, ${meta.color}2e, ${meta.color}0f)` }}>
+                  <Icon name={meta.icon} size={14} color={meta.color} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium truncate">{meta.label}{entry.detail ? ` — ${entry.detail}` : ''}</div>
+                  <div className="text-[11px] text-muted">{relativeTime(entry.at, t)}</div>
+                </div>
+                <button onClick={() => onRemove(entry.id)}
+                        aria-label={t('common_delete')}
+                        className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-bg-3 transition-opacity shrink-0">
+                  <Icon name="x" size={12} color="#6b7480" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/* ══ REPORT GENERATOR — quick-picker modal listing every report so
+   you don't have to scroll to find one. Calls the exact same export
+   functions as their dedicated buttons below. ══ */
+function ReportGeneratorModal({ items, onClose }) {
+  const { t } = useLanguage()
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-bg-1 border border-border w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl max-h-[80dvh] flex flex-col"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <h2 className="text-base font-semibold">{t('adm_generator_title')}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2">
+            <Icon name="x" size={16} color="#9aa3ad" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {items.map(item => (
+            <button key={item.title} onClick={() => { item.onClick(); onClose() }} disabled={item.disabled}
+                    className="w-full flex items-center gap-3 p-3 bg-bg-2 border border-border rounded-xl hover:border-[var(--accent)] transition-colors text-left disabled:opacity-40 disabled:pointer-events-none"
+                    style={{ '--accent': item.color }}>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                   style={{ background: `linear-gradient(135deg, ${item.color}2e, ${item.color}0f)` }}>
+                <Icon name={item.icon} size={16} color={item.color} />
+              </div>
+              <span className="flex-1 min-w-0 text-sm font-medium truncate">{item.title}</span>
+              <Icon name="download" size={14} color="#6b7480" />
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -147,6 +252,28 @@ export default function AdministrationPage({ articles }) {
   const [firma, setFirma] = useState(null)
   const [loading, setLoading] = useState(true)
   const [zipping, setZipping] = useState(false)
+  const [history, setHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) ?? [] } catch { return [] }
+  })
+  const [showGenerator, setShowGenerator] = useState(false)
+
+  // type must match a REPORT_META key; detail is an optional suffix
+  // (e.g. the project name) appended to that type's fixed label.
+  const logHistory = useCallback((type, detail) => {
+    setHistory(h => {
+      const next = [{ id: Date.now(), type, detail: detail || null, at: new Date().toISOString() }, ...h].slice(0, 15)
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)) } catch { /* storage full/unavailable — history just won't persist */ }
+      return next
+    })
+  }, [])
+
+  const removeHistoryEntry = useCallback((id) => {
+    setHistory(h => {
+      const next = h.filter(e => e.id !== id)
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -226,10 +353,10 @@ export default function AdministrationPage({ articles }) {
     ]),
   }), [bewegungen])
 
-  const exportArtikel      = () => downloadXlsx(`Artikel_${today()}.xlsx`, 'Artikel', dsArtikel().headers, dsArtikel().rows)
-  const exportBestellungen = () => downloadXlsx(`Bestellungen_${today()}.xlsx`, 'Bestellungen', dsBestellungen().headers, dsBestellungen().rows)
-  const exportProjekte     = () => downloadXlsx(`Projekte_${today()}.xlsx`, 'Projekte', dsProjekte().headers, dsProjekte().rows)
-  const exportBewegungen   = () => downloadXlsx(`Lagerbewegungen_${today()}.xlsx`, 'Lagerbewegungen', dsBewegungen().headers, dsBewegungen().rows)
+  const exportArtikel      = () => { downloadXlsx(`Artikel_${today()}.xlsx`, 'Artikel', dsArtikel().headers, dsArtikel().rows); logHistory('artikel') }
+  const exportBestellungen = () => { downloadXlsx(`Bestellungen_${today()}.xlsx`, 'Bestellungen', dsBestellungen().headers, dsBestellungen().rows); logHistory('bestellungen') }
+  const exportProjekte     = () => { downloadXlsx(`Projekte_${today()}.xlsx`, 'Projekte', dsProjekte().headers, dsProjekte().rows); logHistory('projekte') }
+  const exportBewegungen   = () => { downloadXlsx(`Lagerbewegungen_${today()}.xlsx`, 'Lagerbewegungen', dsBewegungen().headers, dsBewegungen().rows); logHistory('bewegungen') }
 
   /* ══ PDF BUILDERS — each returns a ready jsPDF doc, reused by the
      single-click buttons and the ZIP bundle ══ */
@@ -518,28 +645,32 @@ export default function AdministrationPage({ articles }) {
     return doc
   }, [firma, bestellungen, projekte, bewegungen, articles, verbrauchMap, lieferanten])
 
-  const exportLieferantenPdf    = async () => (await buildLieferantenPdf()).save(`Lieferantenuebersicht_${today()}.pdf`)
-  const exportLagerbewertungPdf = async () => (await buildLagerbewertungPdf()).save(`Lagerbewertung_${today()}.pdf`)
-  const exportJahresberichtPdf  = async () => (await buildJahresberichtPdf(Number(selectedJahr))).save(`Jahresbericht_${selectedJahr}.pdf`)
+  const exportLieferantenPdf    = async () => { (await buildLieferantenPdf()).save(`Lieferantenuebersicht_${today()}.pdf`); logHistory('lieferanten') }
+  const exportLagerbewertungPdf = async () => { (await buildLagerbewertungPdf()).save(`Lagerbewertung_${today()}.pdf`); logHistory('lagerbewertung') }
+  const exportJahresberichtPdf  = async () => { (await buildJahresberichtPdf(Number(selectedJahr))).save(`Jahresbericht_${selectedJahr}.pdf`); logHistory('jahresbericht', String(selectedJahr)) }
   const exportTagesbewegungPdf  = async () => {
     const suffix = [tagesTyp !== 'Alle' ? tagesTyp : null, tagesQuelle !== 'Alle' ? tagesQuelle : null].filter(Boolean).join('_')
     ;(await buildTagesbewegungPdf(selectedTag, tagesTyp, tagesQuelle)).save(`Tagesbewegung_${selectedTag}${suffix ? '_' + suffix : ''}.pdf`)
+    logHistory('tagesbewegung', selectedTag)
   }
 
   const exportInventurPdf = async () => {
     const session = inventuren.find(s => String(s.id) === String(selectedInventurId))
     if (!session) return
     ;(await buildInventurPdf(session)).save(`Inventurliste_${session.dokument_nr || session.id}.pdf`)
+    logHistory('inventur', session.name)
   }
   const exportWareneingangPdf = async () => {
     const b = bestellungen.find(x => String(x.id) === String(selectedWareneingangId))
     if (!b) return
     ;(await buildWareneingangPdf(b)).save(`Wareneingang_${b.wareneingang_nr || b.id}.pdf`)
+    logHistory('wareneingang', b.lieferant?.name)
   }
   const exportProjektberichtPdf = async () => {
     const p = projekte.find(x => String(x.id) === String(selectedProjektId))
     if (!p) return
     ;(await buildProjektberichtPdf(p)).save(`Projektbericht_${p.dokument_nr || p.id}.pdf`)
+    logHistory('projektbericht', p.name)
   }
 
   /* ══ ZIP BUNDLE — everything above, packaged for the Steuerberater ══ */
@@ -581,6 +712,7 @@ export default function AdministrationPage({ articles }) {
 
       const blob = await zip.generateAsync({ type: 'blob' })
       downloadBlob(`Steuerberater_${selectedJahr}.zip`, blob)
+      logHistory('zip', String(selectedJahr))
     } finally {
       setZipping(false)
     }
@@ -599,15 +731,25 @@ export default function AdministrationPage({ articles }) {
   ])].sort((a, b) => b - a)
 
   const excelExports = [
-    { icon: 'package',   title: t('adm_export_artikel'),      desc: t('adm_export_artikel_desc'),      onClick: exportArtikel },
-    { icon: 'truck',     title: t('adm_export_bestellungen'), desc: t('adm_export_bestellungen_desc'), onClick: exportBestellungen, disabled: bestellungen.length === 0 },
-    { icon: 'clipboard', title: t('adm_export_projekte'),     desc: t('adm_export_projekte_desc'),     onClick: exportProjekte, disabled: projekte.length === 0 },
-    { icon: 'refresh',   title: t('adm_export_bewegungen'),   desc: t('adm_export_bewegungen_desc'),   onClick: exportBewegungen, disabled: bewegungen.length === 0 },
+    { icon: REPORT_META.artikel.icon,      color: REPORT_META.artikel.color,      title: t('adm_export_artikel'),      desc: t('adm_export_artikel_desc'),      onClick: exportArtikel },
+    { icon: REPORT_META.bestellungen.icon, color: REPORT_META.bestellungen.color, title: t('adm_export_bestellungen'), desc: t('adm_export_bestellungen_desc'), onClick: exportBestellungen, disabled: bestellungen.length === 0 },
+    { icon: REPORT_META.projekte.icon,     color: REPORT_META.projekte.color,     title: t('adm_export_projekte'),     desc: t('adm_export_projekte_desc'),     onClick: exportProjekte, disabled: projekte.length === 0 },
+    { icon: REPORT_META.bewegungen.icon,   color: REPORT_META.bewegungen.color,   title: t('adm_export_bewegungen'),   desc: t('adm_export_bewegungen_desc'),   onClick: exportBewegungen, disabled: bewegungen.length === 0 },
   ]
 
   const pdfExports = [
-    { icon: 'building', title: t('adm_pdf_lieferanten'), desc: t('adm_pdf_lieferanten_desc'), onClick: exportLieferantenPdf, disabled: lieferanten.length === 0 },
-    { icon: 'box',       title: t('adm_pdf_lagerbewertung'), desc: t('adm_pdf_lagerbewertung_desc'), onClick: exportLagerbewertungPdf, disabled: articles.length === 0 },
+    { icon: REPORT_META.lieferanten.icon,    color: REPORT_META.lieferanten.color,    title: t('adm_pdf_lieferanten'), desc: t('adm_pdf_lieferanten_desc'), onClick: exportLieferantenPdf, disabled: lieferanten.length === 0 },
+    { icon: REPORT_META.lagerbewertung.icon, color: REPORT_META.lagerbewertung.color, title: t('adm_pdf_lagerbewertung'), desc: t('adm_pdf_lagerbewertung_desc'), onClick: exportLagerbewertungPdf, disabled: articles.length === 0 },
+    { icon: REPORT_META.inventur.icon,       color: REPORT_META.inventur.color,       title: t('adm_pdf_inventur'), desc: t('adm_pdf_inventur_select'), onClick: exportInventurPdf, disabled: !selectedInventurId },
+    { icon: REPORT_META.wareneingang.icon,   color: REPORT_META.wareneingang.color,   title: t('adm_pdf_wareneingang'), desc: t('adm_pdf_wareneingang_select'), onClick: exportWareneingangPdf, disabled: !selectedWareneingangId },
+    { icon: REPORT_META.projektbericht.icon, color: REPORT_META.projektbericht.color, title: t('adm_pdf_projektbericht'), desc: t('adm_pdf_projektbericht_select'), onClick: exportProjektberichtPdf, disabled: !selectedProjektId },
+    { icon: REPORT_META.jahresbericht.icon,  color: REPORT_META.jahresbericht.color,  title: t('adm_pdf_jahresbericht'), desc: String(selectedJahr), onClick: exportJahresberichtPdf },
+  ]
+
+  const generatorItems = [
+    ...pdfExports.filter(e => !e.disabled),
+    ...excelExports.filter(e => !e.disabled),
+    { icon: REPORT_META.zip.icon, color: REPORT_META.zip.color, title: t('adm_zip_title'), onClick: exportZip },
   ]
 
   const receivedBestellungen = bestellungen.filter(b => b.status === 'eingetroffen')
@@ -617,110 +759,129 @@ export default function AdministrationPage({ articles }) {
   const projektOptions = projekte.map(p => ({ id: p.id, label: `${p.dokument_nr ? p.dokument_nr + ' · ' : ''}${p.name}` }))
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-3xl">
-      <div className="mb-5">
-        <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('adm_title')}</h1>
-        <p className="text-secondary text-sm">{t('adm_subtitle')}</p>
+    <div className="p-3 sm:p-6 lg:p-8 max-w-6xl">
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-5">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('adm_title')}</h1>
+          <p className="text-secondary text-sm">{t('adm_subtitle')}</p>
+        </div>
+        <button onClick={() => setShowGenerator(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold shrink-0"
+                style={{ background: 'linear-gradient(135deg,#9b6bd9,#6f47a8)', color: '#fff' }}>
+          <Icon name="chart" size={15} color="#fff" /> {t('adm_generator_button')}
+        </button>
       </div>
 
-      <Card className="p-4 sm:p-5 mb-4">
-        <h2 className="font-semibold text-sm mb-1">{t('adm_pdf_section')}</h2>
-        <p className="text-xs text-secondary mb-4">{t('adm_pdf_section_desc')}</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
-          {pdfExports.map(e => <ExportButton key={e.title} {...e} />)}
-        </div>
-
-        <PickerRow icon="filter" title={t('adm_pdf_inventur')} options={inventurOptions}
-                   placeholder={t('adm_pdf_inventur_select')} value={selectedInventurId}
-                   onChange={setSelectedInventurId} onExport={exportInventurPdf} />
-
-        <PickerRow icon="truck" title={t('adm_pdf_wareneingang')} options={wareneingangOptions}
-                   placeholder={t('adm_pdf_wareneingang_select')} value={selectedWareneingangId}
-                   onChange={setSelectedWareneingangId} onExport={exportWareneingangPdf} />
-
-        <PickerRow icon="clipboard" title={t('adm_pdf_projektbericht')} options={projektOptions}
-                   placeholder={t('adm_pdf_projektbericht_select')} value={selectedProjektId}
-                   onChange={setSelectedProjektId} onExport={exportProjektberichtPdf} />
-
-        <div className="flex items-center gap-2 p-4 bg-bg-2 border border-border rounded-xl mt-2.5">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-bg-3">
-            <Icon name="chart" size={18} color="#e8821c" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm mb-1">{t('adm_pdf_jahresbericht')}</div>
-            <select value={selectedJahr} onChange={e => setSelectedJahr(e.target.value)}
-                    className="w-full bg-bg-1 border border-border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber">
-              {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-          <button onClick={exportJahresberichtPdf}
-                  className="p-2.5 rounded-lg bg-bg-3 border border-border shrink-0">
-            <Icon name="download" size={15} color="#9aa3ad" />
-          </button>
-        </div>
-
-        <div className="flex items-start gap-2 p-4 bg-bg-2 border border-border rounded-xl mt-2.5">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-bg-3">
-            <Icon name="truck" size={18} color="#e8821c" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm mb-1">{t('adm_pdf_tagesbewegung')}</div>
-            <div className="grid grid-cols-3 gap-1.5">
-              <input type="date" value={selectedTag} onChange={e => setSelectedTag(e.target.value)}
-                     className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber" />
-              <select value={tagesTyp} onChange={e => setTagesTyp(e.target.value)}
-                      className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber">
-                <option value="Alle">{t('bew_all_types')}</option>
-                <option value="eingang">{t('bew_only_incoming')}</option>
-                <option value="ausgang">{t('bew_only_outgoing')}</option>
-              </select>
-              <select value={tagesQuelle} onChange={e => setTagesQuelle(e.target.value)}
-                      className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber">
-                <option value="Alle">{t('adm_tages_all_sources')}</option>
-                <option value="bestellung">{t('adm_tages_source_bestellung')}</option>
-                <option value="inventur">{t('adm_tages_source_inventur')}</option>
-                <option value="manuell">{t('adm_tages_source_manuell')}</option>
-                <option value="sonstige">{t('adm_tages_source_sonstige')}</option>
-              </select>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        <div className="lg:col-span-2 space-y-4">
+          <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <h2 className="font-semibold text-sm mb-1">{t('adm_pdf_section')}</h2>
+            <p className="text-xs text-secondary mb-4">{t('adm_pdf_section_desc')}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
+              {pdfExports.slice(0, 2).map(e => <ExportButton key={e.title} {...e} />)}
             </div>
-          </div>
-          <button onClick={exportTagesbewegungPdf}
-                  className="p-2.5 rounded-lg bg-bg-3 border border-border shrink-0">
-            <Icon name="download" size={15} color="#9aa3ad" />
-          </button>
-        </div>
-      </Card>
 
-      <Card className="p-4 sm:p-5 mb-4">
-        <h2 className="font-semibold text-sm mb-1">{t('adm_csv_section')}</h2>
-        <p className="text-xs text-secondary mb-4">{t('adm_csv_section_desc')}</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {excelExports.map(e => <ExportButton key={e.title} {...e} />)}
-        </div>
-      </Card>
+            <PickerRow icon={REPORT_META.inventur.icon} color={REPORT_META.inventur.color} title={t('adm_pdf_inventur')} options={inventurOptions}
+                       placeholder={t('adm_pdf_inventur_select')} value={selectedInventurId}
+                       onChange={setSelectedInventurId} onExport={exportInventurPdf} />
 
-      <Card className="p-4 sm:p-5" style={{ borderColor: '#e8821c55' }}>
-        <div className="flex items-start gap-3 flex-wrap justify-between">
-          <div>
-            <h2 className="font-semibold text-sm mb-1 flex items-center gap-2">
-              <Icon name="download" size={15} color="#e8821c" /> {t('adm_zip_title')}
-            </h2>
-            <p className="text-xs text-secondary max-w-md">{t('adm_zip_desc')}</p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <select value={selectedJahr} onChange={e => setSelectedJahr(e.target.value)}
-                    className="bg-bg-2 border border-border rounded-lg px-2.5 py-2 text-xs outline-none focus:border-amber">
-              {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <button onClick={exportZip} disabled={zipping}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-              <Icon name="download" size={15} color="#181c20" />
-              {zipping ? t('adm_zip_building') : t('adm_zip_button')}
-            </button>
-          </div>
+            <PickerRow icon={REPORT_META.wareneingang.icon} color={REPORT_META.wareneingang.color} title={t('adm_pdf_wareneingang')} options={wareneingangOptions}
+                       placeholder={t('adm_pdf_wareneingang_select')} value={selectedWareneingangId}
+                       onChange={setSelectedWareneingangId} onExport={exportWareneingangPdf} />
+
+            <PickerRow icon={REPORT_META.projektbericht.icon} color={REPORT_META.projektbericht.color} title={t('adm_pdf_projektbericht')} options={projektOptions}
+                       placeholder={t('adm_pdf_projektbericht_select')} value={selectedProjektId}
+                       onChange={setSelectedProjektId} onExport={exportProjektberichtPdf} />
+
+            <div className="flex items-center gap-2 p-4 bg-bg-2 border border-border rounded-xl mt-2.5">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
+                   style={{ background: `linear-gradient(135deg, ${REPORT_META.jahresbericht.color}2e, ${REPORT_META.jahresbericht.color}0f)`, '--tw-ring-color': `${REPORT_META.jahresbericht.color}33` }}>
+                <Icon name={REPORT_META.jahresbericht.icon} size={18} color={REPORT_META.jahresbericht.color} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm mb-1">{t('adm_pdf_jahresbericht')}</div>
+                <select value={selectedJahr} onChange={e => setSelectedJahr(e.target.value)}
+                        className="w-full bg-bg-1 border border-border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber">
+                  {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <button onClick={exportJahresberichtPdf}
+                      className="p-2.5 rounded-lg bg-bg-3 border border-border shrink-0">
+                <Icon name="download" size={15} color="#9aa3ad" />
+              </button>
+            </div>
+
+            <div className="flex items-start gap-2 p-4 bg-bg-2 border border-border rounded-xl mt-2.5">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
+                   style={{ background: `linear-gradient(135deg, ${REPORT_META.tagesbewegung.color}2e, ${REPORT_META.tagesbewegung.color}0f)`, '--tw-ring-color': `${REPORT_META.tagesbewegung.color}33` }}>
+                <Icon name={REPORT_META.tagesbewegung.icon} size={18} color={REPORT_META.tagesbewegung.color} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm mb-1">{t('adm_pdf_tagesbewegung')}</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <input type="date" value={selectedTag} onChange={e => setSelectedTag(e.target.value)}
+                         className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber" />
+                  <select value={tagesTyp} onChange={e => setTagesTyp(e.target.value)}
+                          className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber">
+                    <option value="Alle">{t('bew_all_types')}</option>
+                    <option value="eingang">{t('bew_only_incoming')}</option>
+                    <option value="ausgang">{t('bew_only_outgoing')}</option>
+                  </select>
+                  <select value={tagesQuelle} onChange={e => setTagesQuelle(e.target.value)}
+                          className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber">
+                    <option value="Alle">{t('adm_tages_all_sources')}</option>
+                    <option value="bestellung">{t('adm_tages_source_bestellung')}</option>
+                    <option value="inventur">{t('adm_tages_source_inventur')}</option>
+                    <option value="manuell">{t('adm_tages_source_manuell')}</option>
+                    <option value="sonstige">{t('adm_tages_source_sonstige')}</option>
+                  </select>
+                </div>
+              </div>
+              <button onClick={exportTagesbewegungPdf}
+                      className="p-2.5 rounded-lg bg-bg-3 border border-border shrink-0">
+                <Icon name="download" size={15} color="#9aa3ad" />
+              </button>
+            </div>
+          </Card>
+
+          <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <h2 className="font-semibold text-sm mb-1">{t('adm_csv_section')}</h2>
+            <p className="text-xs text-secondary mb-4">{t('adm_csv_section_desc')}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {excelExports.map(e => <ExportButton key={e.title} {...e} />)}
+            </div>
+          </Card>
+
+          <Card className="p-4 sm:p-5" style={{ borderColor: '#e8821c55' }}>
+            <div className="flex items-start gap-3 flex-wrap justify-between">
+              <div>
+                <h2 className="font-semibold text-sm mb-1 flex items-center gap-2">
+                  <Icon name="download" size={15} color="#e8821c" /> {t('adm_zip_title')}
+                </h2>
+                <p className="text-xs text-secondary max-w-md">{t('adm_zip_desc')}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <select value={selectedJahr} onChange={e => setSelectedJahr(e.target.value)}
+                        className="bg-bg-2 border border-border rounded-lg px-2.5 py-2 text-xs outline-none focus:border-amber">
+                  {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <button onClick={exportZip} disabled={zipping}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60"
+                        style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                  <Icon name="download" size={15} color="#181c20" />
+                  {zipping ? t('adm_zip_building') : t('adm_zip_button')}
+                </button>
+              </div>
+            </div>
+          </Card>
         </div>
-      </Card>
+
+        <div className="lg:col-span-1">
+          <HistoryPanel history={history} onRemove={removeHistoryEntry} />
+        </div>
+      </div>
+
+      {showGenerator && <ReportGeneratorModal items={generatorItems} onClose={() => setShowGenerator(false)} />}
     </div>
   )
 }

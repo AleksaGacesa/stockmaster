@@ -125,6 +125,13 @@ export default function Sidebar({ open, onClose, lowStockCount }) {
                   )
                 })}
             </div>
+            {isOwner && (
+              <NavLink to="/einstellungen" onClick={onClose}
+                       className="flex items-center gap-1.5 px-1 pt-2 pb-1 text-[11px] text-secondary hover:text-primary transition-colors">
+                <Icon name="plus" size={11} color="currentColor" />
+                {t('sidebar_invite_member')}
+              </NavLink>
+            )}
           </div>
         )}
 
