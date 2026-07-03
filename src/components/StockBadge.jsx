@@ -8,11 +8,11 @@ export default function StockBadge({ menge, mindestbestand }) {
   if (menge <= 0) {
     classes = 'bg-red-dim text-red'
     label = t('stock_unavailable')
-    color = '#e0524a'; icon = 'x'; pulse = true
+    color = 'rgb(var(--color-red))'; icon = 'x'; pulse = true
   } else if (menge < mindestbestand) {
     classes = 'bg-red-dim text-red'
     label = t('stock_low')
-    color = '#e0524a'; icon = 'alert'; pulse = true
+    color = 'rgb(var(--color-red))'; icon = 'alert'; pulse = true
   } else if (menge < mindestbestand * 1.5) {
     classes = 'bg-amber-dim text-amber'
     label = t('stock_tight')
@@ -20,7 +20,7 @@ export default function StockBadge({ menge, mindestbestand }) {
   } else {
     classes = 'bg-green-dim text-green'
     label = t('stock_sufficient')
-    color = '#4caf6e'; icon = 'check'
+    color = 'rgb(var(--color-green))'; icon = 'check'
   }
 
   return (

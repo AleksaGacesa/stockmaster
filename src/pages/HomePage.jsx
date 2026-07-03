@@ -60,7 +60,7 @@ function TodayMovementsPopup({ moves, onClose }) {
             filtered.map(m => (
               <div key={m.id} className="flex items-center gap-2.5 px-3 py-2.5 bg-bg-2 border border-border rounded-xl">
                 <Icon name={m.typ === 'eingang' ? 'arrowDown' : 'arrowUp'} size={14}
-                      color={m.typ === 'eingang' ? '#4caf6e' : '#e0524a'} />
+                      color={m.typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate">{m.artikel_name}</div>
                   <div className="text-[11px] text-muted">{m.von_user || '—'}{movementProjectLabel(m) ? ` · ${movementProjectLabel(m)}` : ''}</div>
@@ -221,6 +221,10 @@ export default function HomePage({ articles = [], moves = [] }) {
   const todayMoves = moves.filter(m => new Date(m.created_at).toDateString() === new Date().toDateString())
   const recentMoves = moves.slice(0, 5)
   const quickLinks = isManager ? OWNER_LINKS : WORKER_LINKS
+  // Import is desktop-only (no mobile UI for it, hidden from the mobile
+  // nav too) — drop it from the mobile Quick Access grid so it doesn't
+  // dangle as a tile leading nowhere useful on a phone.
+  const mobileQuickLinks = quickLinks.filter(q => q.to !== '/import')
 
   // A lightweight teaser of the Bestellungen/Aufträge dashboards —
   // just enough to summarize on Home without pulling in their full
@@ -280,7 +284,7 @@ export default function HomePage({ articles = [], moves = [] }) {
 
           {/* Quick access — 2 cols on mobile */}
           <div className="grid grid-cols-2 gap-2">
-            {quickLinks.map(q => (
+            {mobileQuickLinks.map(q => (
               <button key={q.to} onClick={() => navigate(q.to)}
                       className="bg-bg-1 border border-border rounded-xl p-3 text-left flex flex-col gap-2 active:scale-95 transition-transform">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -419,7 +423,7 @@ export default function HomePage({ articles = [], moves = [] }) {
                     {recentMoves.map(m => (
                       <div key={m.id} className="flex items-center gap-2">
                         <Icon name={m.typ === 'eingang' ? 'arrowDown' : 'arrowUp'} size={12}
-                              color={m.typ === 'eingang' ? '#4caf6e' : '#e0524a'} />
+                              color={m.typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
                         <div className="flex-1 min-w-0">
                           <div className="text-xs truncate">{m.artikel_name}</div>
                           {m.von_user && <div className="text-[11px] text-muted">{m.von_user}</div>}
@@ -625,7 +629,7 @@ export default function HomePage({ articles = [], moves = [] }) {
                     {recentMoves.map(m => (
                       <div key={m.id} className="flex items-center gap-3">
                         <Icon name={m.typ === 'eingang' ? 'arrowDown' : 'arrowUp'} size={14}
-                              color={m.typ === 'eingang' ? '#4caf6e' : '#e0524a'} />
+                              color={m.typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm truncate">{m.artikel_name}</div>
                           {m.von_user && <div className="text-xs text-muted">{m.von_user}</div>}

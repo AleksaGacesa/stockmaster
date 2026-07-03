@@ -205,7 +205,7 @@ function MagazinDashboard({ articles, moves }) {
               {recentMoves.slice(0, 5).map(m => (
                 <div key={m.id} className="flex items-center gap-2">
                   <Icon name={m.typ === 'eingang' ? 'arrowDown' : 'arrowUp'} size={12}
-                        color={m.typ === 'eingang' ? '#4caf6e' : '#e0524a'} />
+                        color={m.typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs truncate">{m.artikel_name}</div>
                     {m.von_user && <div className="text-[11px] text-muted">{m.von_user}</div>}
@@ -303,7 +303,7 @@ function MagazinDashboard({ articles, moves }) {
                 {recentMoves.map(m => (
                   <div key={m.id} className="flex items-center gap-3">
                     <Icon name={m.typ === 'eingang' ? 'arrowDown' : 'arrowUp'} size={14}
-                          color={m.typ === 'eingang' ? '#4caf6e' : '#e0524a'} />
+                          color={m.typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{m.artikel_name}</div>
                       {m.von_user && <div className="text-xs text-muted">{m.von_user}</div>}

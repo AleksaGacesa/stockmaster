@@ -2,10 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Structural colors only (surfaces, borders, body text) — brand/status
-   colors (amber, green, red, blue) stay identical in both themes since
-   they already read fine against both a dark and a light surface, so
-   none of the hundreds of Icon color="#.." call sites need to change. */
+/* Structural colors (surfaces, borders, body text) flip between themes.
+   Amber/blue read fine unchanged on both surfaces and stay flat hex at
+   the call site. Green/red (Eingang/Ausgang, stock status) get their
+   own theme-aware RGB triplets here — the same saturated pair looked
+   harsh/washed-out on the light surface, so light mode uses deeper,
+   less neon tones instead of reusing the dark-theme values verbatim. */
 :root {
   --bg-0: 16 19 22;
   --bg-1: 24 28 32;
@@ -19,6 +21,8 @@
   --color-amber-dim: #3a2a14;
   --color-green-dim: #1a2e20;
   --color-red-dim: #3a1c1a;
+  --color-green: 76 175 110;
+  --color-red: 224 82 74;
   --scrollbar-thumb: #454d57;
 }
 
@@ -35,6 +39,8 @@
   --color-amber-dim: #fdecd3;
   --color-green-dim: #ddf3e4;
   --color-red-dim: #fbe1de;
+  --color-green: 42 148 84;
+  --color-red: 200 62 55;
   --scrollbar-thumb: #c7cbd1;
 }
 

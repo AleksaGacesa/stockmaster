@@ -22,11 +22,11 @@ export default {
           dim: 'var(--color-amber-dim)',
         },
         green: {
-          DEFAULT: '#4caf6e',
+          DEFAULT: 'rgb(var(--color-green) / <alpha-value>)',
           dim: 'var(--color-green-dim)',
         },
         red: {
-          DEFAULT: '#e0524a',
+          DEFAULT: 'rgb(var(--color-red) / <alpha-value>)',
           dim: 'var(--color-red-dim)',
         },
         blue: {

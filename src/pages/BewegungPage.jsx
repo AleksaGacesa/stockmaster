@@ -293,8 +293,8 @@ function FormView({ selected, typ, setTyp, menge, setMenge, projekt, setProjekt,
       {!typ ? (
         <div className="flex gap-3">
           {[
-            { typ: 'eingang', label: t('bew_incoming'), icon: 'arrowDown', color: '#4caf6e', bg: '#1a2e20' },
-            { typ: 'ausgang', label: t('bew_outgoing'), icon: 'arrowUp',   color: '#e0524a', bg: '#3a1c1a' },
+            { typ: 'eingang', label: t('bew_incoming'), icon: 'arrowDown', color: 'rgb(var(--color-green))', bg: 'var(--color-green-dim)' },
+            { typ: 'ausgang', label: t('bew_outgoing'), icon: 'arrowUp',   color: 'rgb(var(--color-red))', bg: 'var(--color-red-dim)' },
           ].map(b => (
             <button key={b.typ} onClick={() => setTyp(b.typ)}
                     className="flex-1 border rounded-xl py-4 flex flex-col items-center gap-2 transition-all hover:-translate-y-0.5"
@@ -312,7 +312,7 @@ function FormView({ selected, typ, setTyp, menge, setMenge, projekt, setProjekt,
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold flex items-center gap-2">
               <Icon name={typ === 'eingang' ? 'arrowDown' : 'arrowUp'} size={15}
-                    color={typ === 'eingang' ? '#4caf6e' : '#e0524a'} />
+                    color={typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
               {typ === 'eingang' ? t('bew_incoming') : t('bew_outgoing')}
             </span>
             <button onClick={() => setTyp(null)} className="text-xs text-muted hover:text-secondary">{t('bew_change')}</button>
@@ -355,7 +355,7 @@ function FormView({ selected, typ, setTyp, menge, setMenge, projekt, setProjekt,
           )}
           {error && (
             <div className="flex items-center gap-2 text-red text-xs bg-red-dim rounded-xl px-3 py-2">
-              <Icon name="alert" size={13} color="#e0524a" /> {error}
+              <Icon name="alert" size={13} color="rgb(var(--color-red))" /> {error}
             </div>
           )}
           {warn ? (
@@ -367,7 +367,7 @@ function FormView({ selected, typ, setTyp, menge, setMenge, projekt, setProjekt,
               <div className="flex gap-2">
                 <button onClick={doBook} disabled={booking}
                         className="flex-1 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
-                        style={{ background: '#e0524a' }}>
+                        style={{ background: 'rgb(var(--color-red))' }}>
                   {booking ? t('bew_booking') : bookAnywayLabel}
                 </button>
                 <button onClick={() => setWarn(null)} disabled={booking}
@@ -379,8 +379,8 @@ function FormView({ selected, typ, setTyp, menge, setMenge, projekt, setProjekt,
           ) : success ? (
             <div className="flex flex-col items-center py-3 gap-2">
               <div className="w-12 h-12 rounded-full flex items-center justify-center"
-                   style={{ background: success.typ === 'eingang' ? '#1a2e20' : '#3a1c1a' }}>
-                <Icon name="check" size={24} color={success.typ === 'eingang' ? '#4caf6e' : '#e0524a'} />
+                   style={{ background: success.typ === 'eingang' ? 'var(--color-green-dim)' : 'var(--color-red-dim)' }}>
+                <Icon name="check" size={24} color={success.typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
               </div>
               <div className="text-center">
                 <div className="font-semibold text-sm">
@@ -392,7 +392,7 @@ function FormView({ selected, typ, setTyp, menge, setMenge, projekt, setProjekt,
           ) : (
             <button onClick={handleSubmit}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold text-white"
-                    style={{ background: typ === 'eingang' ? '#4caf6e' : '#e0524a' }}>
+                    style={{ background: typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))' }}>
               {typ === 'eingang' ? t('bew_book_incoming') : t('bew_book_outgoing')}
             </button>
           )}
@@ -580,7 +580,7 @@ function VerlaufTab({ moves }) {
           <div key={m.id} className="bg-bg-1 border border-border rounded-xl px-3 py-2.5">
             <div className="flex items-start gap-2">
               <Icon name={m.typ === 'eingang' ? 'arrowDown' : 'arrowUp'} size={14}
-                    color={m.typ === 'eingang' ? '#4caf6e' : '#e0524a'} className="mt-0.5 shrink-0" />
+                    color={m.typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} className="mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{m.artikel_name}</div>
                 <div className="flex items-center gap-2 text-xs mt-0.5">
@@ -624,7 +624,7 @@ function VerlaufTab({ moves }) {
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1 text-xs ${m.typ === 'eingang' ? 'text-green' : 'text-red'}`}>
                         <Icon name={m.typ === 'eingang' ? 'arrowDown' : 'arrowUp'} size={12}
-                              color={m.typ === 'eingang' ? '#4caf6e' : '#e0524a'} />
+                              color={m.typ === 'eingang' ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
                         {m.typ === 'eingang' ? t('dash_incoming') : t('dash_outgoing')}
                       </span>
                     </td>
