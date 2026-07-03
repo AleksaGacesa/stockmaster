@@ -7,7 +7,7 @@ import { downloadBlob, deNum } from '../lib/csv'
 import { buildXlsxBlob, downloadXlsx } from '../lib/xlsxExport'
 import { drawPdfHeader } from '../lib/pdfHeader'
 import {
-  materialGeplantWert, projektArbeitskosten, projektGewinn, projektRealisierterGewinn,
+  materialGeplantWert, projektGewinn, projektRealisierterGewinn,
   buildReservierungMap,
 } from '../lib/auftraegeHelpers'
 import { lieferantStats, bestellungTotal } from '../lib/bestellungHelpers'
@@ -209,7 +209,10 @@ export default function AdministrationPage({ articles }) {
     rows: projekte.map(p => [
       p.dokument_nr || `#${p.id}`, p.name, p.kunde, fmtDt(p.created_at),
       fmtDt(p.status === 'abgeschlossen' ? p.abgeschlossen_at : p.rok), STATUS_LABEL[p.status] ?? p.status,
-      Number(p.verkaufspreis), Number(materialGeplantWert(p)), Number(projektArbeitskosten(p)),
+      // Frozen "Geplant" labor cost — not the live elapsed-time figure —
+      // so this column always sums correctly to the Gewinn column next
+      // to it (projektGewinn is computed from the frozen figure too).
+      Number(p.verkaufspreis), Number(materialGeplantWert(p)), Number(p.geplante_arbeitskosten ?? 0),
       Number(p.status === 'abgeschlossen' ? projektRealisierterGewinn(p, verbrauchMap, articles) : projektGewinn(p)),
     ]),
   }), [projekte, verbrauchMap, articles])
@@ -419,7 +422,10 @@ export default function AdministrationPage({ articles }) {
       body: [
         ['Geplanter Umsatz', fmt(p.verkaufspreis)],
         ['Materialkosten (geplant)', fmt(materialGeplantWert(p))],
-        ['Arbeitskosten', fmt(projektArbeitskosten(p))],
+        // Frozen figure, matching Gewinn (geplant) below — using the
+        // live elapsed-time cost here would make the two rows not add
+        // up to the profit row anymore.
+        ['Arbeitskosten (geplant)', fmt(Number(p.geplante_arbeitskosten ?? 0))],
         ['Gewinn (geplant)', fmt(projektGewinn(p))],
         ...(p.status === 'abgeschlossen' ? [['Gewinn (realisiert)', fmt(projektRealisierterGewinn(p, verbrauchMap, articles))]] : []),
       ],
