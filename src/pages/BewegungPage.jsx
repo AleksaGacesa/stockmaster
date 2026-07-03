@@ -236,7 +236,7 @@ function FormView({ selected, typ, setTyp, menge, setMenge, projekt, setProjekt,
   ) : ''
   const bookAnywayLabel = warn ? (lang === 'en' ? `Book ${warn.menge} anyway` : `Trotzdem ${warn.menge} buchen`) : ''
   return (
-    <div className="w-full max-w-md space-y-3">
+    <div className="w-full max-w-2xl space-y-4">
       {/* Selected article */}
       <Card className="p-3 flex items-center gap-3">
         <div className="w-12 h-12 rounded-xl bg-bg-2 overflow-hidden shrink-0">
@@ -453,12 +453,29 @@ function DesktopBuchen({ articles, onBooked, projekte }) {
                 activeFilters={activeFilters} clearFilters={clearFilters} />
   )
   if (step === 'form' && selected) return (
-    <FormView selected={selected} typ={typ} setTyp={setTyp} menge={menge} setMenge={setMenge}
-              projekt={projekt} setProjekt={setProjekt} projektId={projektId} setProjektId={setProjektId} projekte={projekte}
-              error={error} success={success}
-              handleSubmit={handleSubmit} reset={reset}
-              warn={warn} setWarn={setWarn} doBook={doBook} booking={booking} />
-  )
+  <div className="flex justify-center pt-10">
+    <FormView
+      selected={selected}
+      typ={typ}
+      setTyp={setTyp}
+      menge={menge}
+      setMenge={setMenge}
+      projekt={projekt}
+      setProjekt={setProjekt}
+      projektId={projektId}
+      setProjektId={setProjektId}
+      projekte={projekte}
+      error={error}
+      success={success}
+      handleSubmit={handleSubmit}
+      reset={reset}
+      warn={warn}
+      setWarn={setWarn}
+      doBook={doBook}
+      booking={booking}
+    />
+  </div>
+)
   return null
 }
 
