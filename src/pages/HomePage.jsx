@@ -438,20 +438,22 @@ export default function HomePage({ articles = [], moves = [] }) {
       {/* ══ DESKTOP ══ */}
       <div className="hidden sm:block p-6 lg:p-8 space-y-6">
         {/* Hero */}
-        <div className="rounded-2xl border border-border overflow-hidden relative"
+        <div className="rounded-2xl border border-border overflow-hidden relative shadow-[0_20px_50px_-25px_rgba(0,0,0,0.4)]"
              style={{ background: 'linear-gradient(135deg, rgb(var(--bg-1)) 0%, rgb(var(--bg-0)) 100%)' }}>
-          <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10 pointer-events-none"
-               style={{ background: 'radial-gradient(circle,#e8821c 0%,transparent 70%)', transform: 'translate(30%,-30%)' }} />
-          <div className="p-6 relative">
-            <div className="flex items-center gap-3 mb-3">
+          <div className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-[0.12] pointer-events-none"
+               style={{ background: 'radial-gradient(circle,#e8821c 0%,transparent 70%)', transform: 'translate(25%,-35%)' }} />
+          <div className="absolute bottom-0 left-1/3 w-56 h-56 rounded-full opacity-[0.07] pointer-events-none"
+               style={{ background: 'radial-gradient(circle,#4a90d9 0%,transparent 70%)', transform: 'translate(-20%,40%)' }} />
+          <div className="p-7 lg:p-8 relative">
+            <div className="flex items-center gap-3 mb-4">
               <Logo size="lg" />
               <div>
                 <div className="font-extrabold text-xl">Stock<span className="text-amber">Master</span></div>
                 <Tagline size="lg" />
               </div>
             </div>
-            <h1 className="text-2xl font-semibold mb-1">
-              {t('home_welcome_back')}, {profile?.display_name?.split(' ')[0]}
+            <h1 className="text-[28px] leading-tight font-semibold mb-1.5 tracking-tight">
+              {t('home_welcome_back')}, <span className="text-amber">{profile?.display_name?.split(' ')[0]}</span>
             </h1>
             <p className="text-secondary text-sm">
               {isManager ? t('home_owner_subtitle') : t('home_worker_subtitle')}
@@ -461,17 +463,18 @@ export default function HomePage({ articles = [], moves = [] }) {
 
         {/* Quick access */}
         <section>
-          <h2 className="text-sm font-medium text-secondary mb-3">{t('home_quick_access')}</h2>
+          <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{t('home_quick_access')}</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
             {quickLinks.map(q => (
               <button key={q.to} onClick={() => navigate(q.to)}
-                      className="bg-bg-1 border border-border rounded-xl p-4 text-left flex flex-col gap-3 hover:border-border-strong hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition-all duration-150">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                     style={{ background: q.accent + '1a' }}>
+                      style={{ '--accent': q.accent }}
+                      className="group bg-bg-1 border border-border rounded-xl p-4 text-left flex flex-col gap-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-[var(--accent)] hover:-translate-y-0.5 hover:shadow-[0_12px_24px_-10px_rgba(0,0,0,0.3)] transition-all duration-200">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center ring-1 ring-inset transition-colors"
+                     style={{ background: `linear-gradient(135deg, ${q.accent}2e, ${q.accent}0f)`, '--tw-ring-color': `${q.accent}33` }}>
                   <Icon name={q.icon} size={18} color={q.accent} />
                 </div>
                 <div>
-                  <div className="font-medium text-sm text-primary mb-0.5">{t(q.labelKey)}</div>
+                  <div className="font-medium text-sm text-primary mb-0.5 group-hover:text-[var(--accent)] transition-colors">{t(q.labelKey)}</div>
                   <div className="text-xs text-secondary leading-tight">{t(q.descKey)}</div>
                 </div>
               </button>
@@ -540,64 +543,72 @@ export default function HomePage({ articles = [], moves = [] }) {
         {/* Owner stats + charts */}
         {isManager && (
           <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              {[
-                { label: t('home_articles_total'),   value: articles.length,  icon: 'package', color: '#4a90d9' },
-                { label: t('home_stock_value'),       value: totalValue,       icon: 'chart',   color: '#4caf6e', format: fmt },
-                { label: t('home_low_stock_full'),    value: lowStock.length,  icon: 'alert',   color: '#e0524a' },
-                { label: t('home_movements_today'),   value: todayMoves.length,icon: 'truck',   color: '#e8821c', onClick: () => setShowToday(true) },
-              ].map(s => (
-                <Card key={s.label} className="p-4" onClick={s.onClick}>
-                  <div className="flex items-start justify-between mb-2">
-                    <span className="text-xs text-secondary">{s.label}</span>
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: s.color + '1a' }}>
-                      <Icon name={s.icon} size={14} color={s.color} />
+            <div>
+              <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{t('home_section_stock')}</h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  { label: t('home_articles_total'),   value: articles.length,  icon: 'package', color: '#4a90d9' },
+                  { label: t('home_stock_value'),       value: totalValue,       icon: 'chart',   color: '#4caf6e', format: fmt },
+                  { label: t('home_low_stock_full'),    value: lowStock.length,  icon: 'alert',   color: '#e0524a' },
+                  { label: t('home_movements_today'),   value: todayMoves.length,icon: 'truck',   color: '#e8821c', onClick: () => setShowToday(true) },
+                ].map(s => (
+                  <Card key={s.label} className="p-4 border-t-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
+                        style={{ borderTopColor: s.color }} onClick={s.onClick}>
+                    <div className="flex items-start justify-between mb-2">
+                      <span className="text-xs text-secondary">{s.label}</span>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                           style={{ background: `linear-gradient(135deg, ${s.color}2e, ${s.color}0f)` }}>
+                        <Icon name={s.icon} size={14} color={s.color} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-xl font-bold font-mono"><CountUp value={s.value} format={s.format} /></div>
-                </Card>
-              ))}
+                    <div className="text-xl font-bold font-mono"><CountUp value={s.value} format={s.format} /></div>
+                  </Card>
+                ))}
+              </div>
             </div>
 
             {/* Bestellungen / Aufträge teaser — smaller cards pulled
                 from the two other Dashboard faces */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Card className="p-4" onClick={() => navigate('/lieferanten?tab=bestellungen')}>
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-xs text-secondary">{t('home_open_orders')}</span>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#9b6bd91a' }}>
-                    <Icon name="building" size={14} color="#9b6bd9" />
+            <div>
+              <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{t('home_section_orders')}</h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <Card className="p-4 border-t-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]" style={{ borderTopColor: '#9b6bd9' }} onClick={() => navigate('/lieferanten?tab=bestellungen')}>
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="text-xs text-secondary">{t('home_open_orders')}</span>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #9b6bd92e, #9b6bd90f)' }}>
+                      <Icon name="building" size={14} color="#9b6bd9" />
+                    </div>
                   </div>
-                </div>
-                <div className="text-xl font-bold font-mono"><CountUp value={bestellungen.length} /></div>
-              </Card>
-              <Card className="p-4" onClick={() => navigate('/lieferanten?tab=bestellungen')}>
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-xs text-secondary">{t('home_orders_value')}</span>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#9b6bd91a' }}>
-                    <Icon name="truck" size={14} color="#9b6bd9" />
+                  <div className="text-xl font-bold font-mono"><CountUp value={bestellungen.length} /></div>
+                </Card>
+                <Card className="p-4 border-t-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]" style={{ borderTopColor: '#9b6bd9' }} onClick={() => navigate('/lieferanten?tab=bestellungen')}>
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="text-xs text-secondary">{t('home_orders_value')}</span>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #9b6bd92e, #9b6bd90f)' }}>
+                      <Icon name="truck" size={14} color="#9b6bd9" />
+                    </div>
                   </div>
-                </div>
-                <div className="text-xl font-bold font-mono"><CountUp value={bestellwertUnterwegs} format={fmt} /></div>
-              </Card>
-              <Card className="p-4" onClick={() => navigate('/auftraege')}>
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-xs text-secondary">{t('home_active_projects')}</span>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#d96b8f1a' }}>
-                    <Icon name="clipboard" size={14} color="#d96b8f" />
+                  <div className="text-xl font-bold font-mono"><CountUp value={bestellwertUnterwegs} format={fmt} /></div>
+                </Card>
+                <Card className="p-4 border-t-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]" style={{ borderTopColor: '#d96b8f' }} onClick={() => navigate('/auftraege')}>
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="text-xs text-secondary">{t('home_active_projects')}</span>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #d96b8f2e, #d96b8f0f)' }}>
+                      <Icon name="clipboard" size={14} color="#d96b8f" />
+                    </div>
                   </div>
-                </div>
-                <div className="text-xl font-bold font-mono"><CountUp value={aktiveProjekte} /></div>
-              </Card>
-              <Card className="p-4" onClick={() => navigate('/auftraege')}>
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-xs text-secondary">{t('home_expected_profit')}</span>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#d96b8f1a' }}>
-                    <Icon name="chart" size={14} color="#d96b8f" />
+                  <div className="text-xl font-bold font-mono"><CountUp value={aktiveProjekte} /></div>
+                </Card>
+                <Card className="p-4 border-t-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]" style={{ borderTopColor: '#d96b8f' }} onClick={() => navigate('/auftraege')}>
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="text-xs text-secondary">{t('home_expected_profit')}</span>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #d96b8f2e, #d96b8f0f)' }}>
+                      <Icon name="chart" size={14} color="#d96b8f" />
+                    </div>
                   </div>
-                </div>
-                <div className="text-xl font-bold font-mono"><CountUp value={erwarteterGewinnAuftraege} format={fmt} /></div>
-              </Card>
+                  <div className="text-xl font-bold font-mono"><CountUp value={erwarteterGewinnAuftraege} format={fmt} /></div>
+                </Card>
+              </div>
             </div>
 
             <UpcomingStartsCard projekte={projekte} navigate={navigate} />
