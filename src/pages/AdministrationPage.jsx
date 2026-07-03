@@ -64,22 +64,26 @@ const REPORT_META = {
   zip:            { icon: 'download',  color: '#e8821c', label: 'Steuerberater-Export' },
 }
 
-/* ══ EXPORT CARD ══ */
-function ExportButton({ icon, title, desc, onClick, disabled, color = '#e8821c' }) {
+/* ══ EXPORT CARD — icon+title header, description, full-width action
+   button at the bottom, matching the mockup's card anatomy. ══ */
+function ExportButton({ icon, title, desc, onClick, disabled, color = '#e8821c', buttonLabel }) {
+  const { t } = useLanguage()
   return (
-    <button onClick={onClick} disabled={disabled}
-            style={{ '--accent': color }}
-            className="w-full flex items-center gap-3 p-4 bg-bg-2 border border-border rounded-xl hover:border-[var(--accent)] hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200 text-left disabled:opacity-50 disabled:pointer-events-none disabled:hover:translate-y-0 disabled:hover:shadow-none">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
-           style={{ background: `linear-gradient(135deg, ${color}2e, ${color}0f)`, '--tw-ring-color': `${color}33` }}>
-        <Icon name={icon} size={18} color={color} />
+    <div style={{ '--accent': color }}
+         className="p-4 bg-bg-2 border border-border rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-[var(--accent)] transition-colors duration-200 flex flex-col gap-3">
+      <div className="flex items-center gap-2.5">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ring-1 ring-inset"
+             style={{ background: `linear-gradient(135deg, ${color}2e, ${color}0f)`, '--tw-ring-color': `${color}33` }}>
+          <Icon name={icon} size={16} color={color} />
+        </div>
+        <div className="font-medium text-sm min-w-0 truncate">{title}</div>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm">{title}</div>
-        <div className="text-xs text-muted mt-0.5">{desc}</div>
-      </div>
-      <Icon name="download" size={15} color="#6b7480" />
-    </button>
+      <p className="text-xs text-muted flex-1 leading-relaxed">{desc}</p>
+      <button onClick={onClick} disabled={disabled}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium bg-bg-3 border border-border hover:bg-bg-1 hover:border-[var(--accent)] transition-colors disabled:opacity-40 disabled:pointer-events-none">
+        <Icon name="download" size={13} color="#9aa3ad" /> {buttonLabel ?? t('adm_pdf_create')}
+      </button>
+    </div>
   )
 }
 
@@ -129,25 +133,6 @@ function SearchablePicker({ value, onChange, options, placeholder }) {
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-function PickerRow({ icon, title, options, placeholder, value, onChange, onExport, disabled, color = '#e8821c' }) {
-  return (
-    <div className="flex items-center gap-2 p-4 bg-bg-2 border border-border rounded-xl mt-2.5 first:mt-0">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
-           style={{ background: `linear-gradient(135deg, ${color}2e, ${color}0f)`, '--tw-ring-color': `${color}33` }}>
-        <Icon name={icon} size={18} color={color} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm mb-1">{title}</div>
-        <SearchablePicker value={value} onChange={onChange} options={options} placeholder={placeholder} />
-      </div>
-      <button onClick={onExport} disabled={disabled ?? !value}
-              className="p-2.5 rounded-lg bg-bg-3 border border-border disabled:opacity-40 disabled:pointer-events-none shrink-0">
-        <Icon name="download" size={15} color="#9aa3ad" />
-      </button>
     </div>
   )
 }
@@ -234,6 +219,37 @@ function ReportGeneratorModal({ items, onClose }) {
   )
 }
 
+/* ══ QUICK-PICK MODAL — for the 3 report cards that need one specific
+   record (which Inventur session / Bestellung / Projekt) instead of
+   always having a picker row sitting in the page. Pick → export
+   fires immediately. ══ */
+function QuickPickModal({ title, icon, color, options, onPick, onClose }) {
+  const { t } = useLanguage()
+  const [value, setValue] = useState('')
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-bg-1 border border-border w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-base font-semibold flex items-center gap-2">
+            <Icon name={icon} size={16} color={color} /> {title}
+          </h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2">
+            <Icon name="x" size={16} color="#9aa3ad" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <SearchablePicker value={value} onChange={setValue} options={options} placeholder={t('adm_quickpick_placeholder')} />
+          <button onClick={() => { if (value) { onPick(value); onClose() } }} disabled={!value}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+            <Icon name="download" size={15} color="#181c20" /> {t('adm_pdf_create')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AdministrationPage({ articles }) {
   const { t } = useLanguage()
   const [lieferanten, setLieferanten] = useState([])
@@ -256,6 +272,7 @@ export default function AdministrationPage({ articles }) {
     try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) ?? [] } catch { return [] }
   })
   const [showGenerator, setShowGenerator] = useState(false)
+  const [quickPick, setQuickPick] = useState(null) // 'inventur' | 'wareneingang' | 'projektbericht' | null
 
   // type must match a REPORT_META key; detail is an optional suffix
   // (e.g. the project name) appended to that type's fixed label.
@@ -654,20 +671,23 @@ export default function AdministrationPage({ articles }) {
     logHistory('tagesbewegung', selectedTag)
   }
 
-  const exportInventurPdf = async () => {
-    const session = inventuren.find(s => String(s.id) === String(selectedInventurId))
+  // Each accepts an optional id override so the quick-pick modal can
+  // fire the export the instant something's chosen, instead of
+  // waiting a render for setSelectedXxxId to land in state first.
+  const exportInventurPdf = async (idOverride) => {
+    const session = inventuren.find(s => String(s.id) === String(idOverride ?? selectedInventurId))
     if (!session) return
     ;(await buildInventurPdf(session)).save(`Inventurliste_${session.dokument_nr || session.id}.pdf`)
     logHistory('inventur', session.name)
   }
-  const exportWareneingangPdf = async () => {
-    const b = bestellungen.find(x => String(x.id) === String(selectedWareneingangId))
+  const exportWareneingangPdf = async (idOverride) => {
+    const b = bestellungen.find(x => String(x.id) === String(idOverride ?? selectedWareneingangId))
     if (!b) return
     ;(await buildWareneingangPdf(b)).save(`Wareneingang_${b.wareneingang_nr || b.id}.pdf`)
     logHistory('wareneingang', b.lieferant?.name)
   }
-  const exportProjektberichtPdf = async () => {
-    const p = projekte.find(x => String(x.id) === String(selectedProjektId))
+  const exportProjektberichtPdf = async (idOverride) => {
+    const p = projekte.find(x => String(x.id) === String(idOverride ?? selectedProjektId))
     if (!p) return
     ;(await buildProjektberichtPdf(p)).save(`Projektbericht_${p.dokument_nr || p.id}.pdf`)
     logHistory('projektbericht', p.name)
@@ -730,20 +750,28 @@ export default function AdministrationPage({ articles }) {
     new Date().getFullYear(),
   ])].sort((a, b) => b - a)
 
+  const receivedBestellungen = bestellungen.filter(b => b.status === 'eingetroffen')
+  const inventurOptions = inventuren.map(s => ({ id: s.id, label: `${s.dokument_nr ? s.dokument_nr + ' · ' : ''}${s.name} (${fmtDt(s.created_at)})` }))
+  const wareneingangOptions = receivedBestellungen.map(b => ({ id: b.id, label: `${b.wareneingang_nr || `#${b.id}`} · ${b.lieferant?.name} (${fmtDt(b.eingetroffen_at)})` }))
+  const projektOptions = projekte.map(p => ({ id: p.id, label: `${p.dokument_nr ? p.dokument_nr + ' · ' : ''}${p.name}` }))
+
   const excelExports = [
-    { icon: REPORT_META.artikel.icon,      color: REPORT_META.artikel.color,      title: t('adm_export_artikel'),      desc: t('adm_export_artikel_desc'),      onClick: exportArtikel },
-    { icon: REPORT_META.bestellungen.icon, color: REPORT_META.bestellungen.color, title: t('adm_export_bestellungen'), desc: t('adm_export_bestellungen_desc'), onClick: exportBestellungen, disabled: bestellungen.length === 0 },
-    { icon: REPORT_META.projekte.icon,     color: REPORT_META.projekte.color,     title: t('adm_export_projekte'),     desc: t('adm_export_projekte_desc'),     onClick: exportProjekte, disabled: projekte.length === 0 },
-    { icon: REPORT_META.bewegungen.icon,   color: REPORT_META.bewegungen.color,   title: t('adm_export_bewegungen'),   desc: t('adm_export_bewegungen_desc'),   onClick: exportBewegungen, disabled: bewegungen.length === 0 },
+    { icon: REPORT_META.artikel.icon,      color: REPORT_META.artikel.color,      title: t('adm_export_artikel'),      desc: t('adm_export_artikel_desc'),      onClick: exportArtikel, buttonLabel: t('adm_excel_create') },
+    { icon: REPORT_META.bestellungen.icon, color: REPORT_META.bestellungen.color, title: t('adm_export_bestellungen'), desc: t('adm_export_bestellungen_desc'), onClick: exportBestellungen, disabled: bestellungen.length === 0, buttonLabel: t('adm_excel_create') },
+    { icon: REPORT_META.projekte.icon,     color: REPORT_META.projekte.color,     title: t('adm_export_projekte'),     desc: t('adm_export_projekte_desc'),     onClick: exportProjekte, disabled: projekte.length === 0, buttonLabel: t('adm_excel_create') },
+    { icon: REPORT_META.bewegungen.icon,   color: REPORT_META.bewegungen.color,   title: t('adm_export_bewegungen'),   desc: t('adm_export_bewegungen_desc'),   onClick: exportBewegungen, disabled: bewegungen.length === 0, buttonLabel: t('adm_excel_create') },
   ]
 
+  // Inventur/Wareneingang/Projektbericht need one specific record —
+  // their card opens the quick-pick modal instead of exporting
+  // straight away, so all 6 report cards can sit in one uniform grid.
   const pdfExports = [
     { icon: REPORT_META.lieferanten.icon,    color: REPORT_META.lieferanten.color,    title: t('adm_pdf_lieferanten'), desc: t('adm_pdf_lieferanten_desc'), onClick: exportLieferantenPdf, disabled: lieferanten.length === 0 },
     { icon: REPORT_META.lagerbewertung.icon, color: REPORT_META.lagerbewertung.color, title: t('adm_pdf_lagerbewertung'), desc: t('adm_pdf_lagerbewertung_desc'), onClick: exportLagerbewertungPdf, disabled: articles.length === 0 },
-    { icon: REPORT_META.inventur.icon,       color: REPORT_META.inventur.color,       title: t('adm_pdf_inventur'), desc: t('adm_pdf_inventur_select'), onClick: exportInventurPdf, disabled: !selectedInventurId },
-    { icon: REPORT_META.wareneingang.icon,   color: REPORT_META.wareneingang.color,   title: t('adm_pdf_wareneingang'), desc: t('adm_pdf_wareneingang_select'), onClick: exportWareneingangPdf, disabled: !selectedWareneingangId },
-    { icon: REPORT_META.projektbericht.icon, color: REPORT_META.projektbericht.color, title: t('adm_pdf_projektbericht'), desc: t('adm_pdf_projektbericht_select'), onClick: exportProjektberichtPdf, disabled: !selectedProjektId },
-    { icon: REPORT_META.jahresbericht.icon,  color: REPORT_META.jahresbericht.color,  title: t('adm_pdf_jahresbericht'), desc: String(selectedJahr), onClick: exportJahresberichtPdf },
+    { icon: REPORT_META.inventur.icon,       color: REPORT_META.inventur.color,       title: t('adm_pdf_inventur'), desc: t('adm_pdf_inventur_desc'), onClick: () => setQuickPick('inventur'), disabled: inventurOptions.length === 0 },
+    { icon: REPORT_META.wareneingang.icon,   color: REPORT_META.wareneingang.color,   title: t('adm_pdf_wareneingang'), desc: t('adm_pdf_wareneingang_desc'), onClick: () => setQuickPick('wareneingang'), disabled: wareneingangOptions.length === 0 },
+    { icon: REPORT_META.projektbericht.icon, color: REPORT_META.projektbericht.color, title: t('adm_pdf_projektbericht'), desc: t('adm_pdf_projektbericht_desc'), onClick: () => setQuickPick('projektbericht'), disabled: projektOptions.length === 0 },
+    { icon: REPORT_META.jahresbericht.icon,  color: REPORT_META.jahresbericht.color,  title: t('adm_pdf_jahresbericht'), desc: t('adm_pdf_jahresbericht_desc'), onClick: exportJahresberichtPdf },
   ]
 
   const generatorItems = [
@@ -752,14 +780,14 @@ export default function AdministrationPage({ articles }) {
     { icon: REPORT_META.zip.icon, color: REPORT_META.zip.color, title: t('adm_zip_title'), onClick: exportZip },
   ]
 
-  const receivedBestellungen = bestellungen.filter(b => b.status === 'eingetroffen')
-
-  const inventurOptions = inventuren.map(s => ({ id: s.id, label: `${s.dokument_nr ? s.dokument_nr + ' · ' : ''}${s.name} (${fmtDt(s.created_at)})` }))
-  const wareneingangOptions = receivedBestellungen.map(b => ({ id: b.id, label: `${b.wareneingang_nr || `#${b.id}`} · ${b.lieferant?.name} (${fmtDt(b.eingetroffen_at)})` }))
-  const projektOptions = projekte.map(p => ({ id: p.id, label: `${p.dokument_nr ? p.dokument_nr + ' · ' : ''}${p.name}` }))
+  const quickPickMeta = {
+    inventur:       { title: t('adm_pdf_inventur'),       options: inventurOptions,       onPick: (id) => { setSelectedInventurId(id); exportInventurPdf(id) } },
+    wareneingang:   { title: t('adm_pdf_wareneingang'),    options: wareneingangOptions,    onPick: (id) => { setSelectedWareneingangId(id); exportWareneingangPdf(id) } },
+    projektbericht: { title: t('adm_pdf_projektbericht'),  options: projektOptions,          onPick: (id) => { setSelectedProjektId(id); exportProjektberichtPdf(id) } },
+  }
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-6xl">
+    <div className="p-3 sm:p-6 lg:p-10 max-w-[1700px] mx-auto">
       <div className="flex items-start justify-between gap-3 flex-wrap mb-5">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('adm_title')}</h1>
@@ -772,46 +800,16 @@ export default function AdministrationPage({ articles }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-        <div className="lg:col-span-2 space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+        <div className="lg:col-span-2 space-y-5">
           <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <h2 className="font-semibold text-sm mb-1">{t('adm_pdf_section')}</h2>
             <p className="text-xs text-secondary mb-4">{t('adm_pdf_section_desc')}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
-              {pdfExports.slice(0, 2).map(e => <ExportButton key={e.title} {...e} />)}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+              {pdfExports.map(e => <ExportButton key={e.title} {...e} buttonLabel={t('adm_pdf_create')} />)}
             </div>
 
-            <PickerRow icon={REPORT_META.inventur.icon} color={REPORT_META.inventur.color} title={t('adm_pdf_inventur')} options={inventurOptions}
-                       placeholder={t('adm_pdf_inventur_select')} value={selectedInventurId}
-                       onChange={setSelectedInventurId} onExport={exportInventurPdf} />
-
-            <PickerRow icon={REPORT_META.wareneingang.icon} color={REPORT_META.wareneingang.color} title={t('adm_pdf_wareneingang')} options={wareneingangOptions}
-                       placeholder={t('adm_pdf_wareneingang_select')} value={selectedWareneingangId}
-                       onChange={setSelectedWareneingangId} onExport={exportWareneingangPdf} />
-
-            <PickerRow icon={REPORT_META.projektbericht.icon} color={REPORT_META.projektbericht.color} title={t('adm_pdf_projektbericht')} options={projektOptions}
-                       placeholder={t('adm_pdf_projektbericht_select')} value={selectedProjektId}
-                       onChange={setSelectedProjektId} onExport={exportProjektberichtPdf} />
-
-            <div className="flex items-center gap-2 p-4 bg-bg-2 border border-border rounded-xl mt-2.5">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
-                   style={{ background: `linear-gradient(135deg, ${REPORT_META.jahresbericht.color}2e, ${REPORT_META.jahresbericht.color}0f)`, '--tw-ring-color': `${REPORT_META.jahresbericht.color}33` }}>
-                <Icon name={REPORT_META.jahresbericht.icon} size={18} color={REPORT_META.jahresbericht.color} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm mb-1">{t('adm_pdf_jahresbericht')}</div>
-                <select value={selectedJahr} onChange={e => setSelectedJahr(e.target.value)}
-                        className="w-full bg-bg-1 border border-border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber">
-                  {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-              <button onClick={exportJahresberichtPdf}
-                      className="p-2.5 rounded-lg bg-bg-3 border border-border shrink-0">
-                <Icon name="download" size={15} color="#9aa3ad" />
-              </button>
-            </div>
-
-            <div className="flex items-start gap-2 p-4 bg-bg-2 border border-border rounded-xl mt-2.5">
+            <div className="flex items-start gap-2 p-4 bg-bg-2 border border-border rounded-xl">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
                    style={{ background: `linear-gradient(135deg, ${REPORT_META.tagesbewegung.color}2e, ${REPORT_META.tagesbewegung.color}0f)`, '--tw-ring-color': `${REPORT_META.tagesbewegung.color}33` }}>
                 <Icon name={REPORT_META.tagesbewegung.icon} size={18} color={REPORT_META.tagesbewegung.color} />
@@ -847,7 +845,7 @@ export default function AdministrationPage({ articles }) {
           <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <h2 className="font-semibold text-sm mb-1">{t('adm_csv_section')}</h2>
             <p className="text-xs text-secondary mb-4">{t('adm_csv_section_desc')}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {excelExports.map(e => <ExportButton key={e.title} {...e} />)}
             </div>
           </Card>
@@ -882,6 +880,17 @@ export default function AdministrationPage({ articles }) {
       </div>
 
       {showGenerator && <ReportGeneratorModal items={generatorItems} onClose={() => setShowGenerator(false)} />}
+
+      {quickPick && (
+        <QuickPickModal
+          title={quickPickMeta[quickPick].title}
+          icon={REPORT_META[quickPick].icon}
+          color={REPORT_META[quickPick].color}
+          options={quickPickMeta[quickPick].options}
+          onPick={quickPickMeta[quickPick].onPick}
+          onClose={() => setQuickPick(null)}
+        />
+      )}
     </div>
   )
 }
