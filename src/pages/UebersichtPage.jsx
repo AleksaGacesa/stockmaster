@@ -12,7 +12,7 @@ const fmt = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency:
 
 function SelectCheckbox({ checked, onClick }) {
   return (
-    <button onClick={onClick}
+    <button onClick={e => { e.stopPropagation(); onClick() }}
             className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
               checked ? 'bg-amber border-amber' : 'border-border bg-bg-2'
             }`}>
