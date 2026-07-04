@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
 import Card from '../components/Card'
 import Icon from '../components/Icon'
@@ -44,11 +45,10 @@ const movementProjectLabel = (m) => m.projekte?.dokument_nr
 const loadPdfLibs = () => Promise.all([import('jspdf'), import('jspdf-autotable')])
   .then(([{ jsPDF }, { default: autoTable }]) => ({ jsPDF, autoTable }))
 
-// A lightweight, per-device log of what's been exported from this
-// browser — not a synced/cross-device history (that would need a
-// dedicated table + real automation, see Phase 2), just enough to
-// answer "did I already pull this today" without leaving the page.
-const HISTORY_KEY = 'adm_report_history'
+// Export history now lives in the database (export_protokoll), so it's
+// shared across every device and survives cache clears / origin
+// changes — the old localStorage version silently vanished when
+// switching between the deployed site and localhost.
 const REPORT_META = {
   lieferanten:    { icon: 'building',  color: '#9b6bd9', label: 'Lieferantenübersicht' },
   lagerbewertung: { icon: 'box',       color: '#4a90d9', label: 'Lagerbewertung' },
@@ -137,10 +137,8 @@ function SearchablePicker({ value, onChange, options, placeholder }) {
   )
 }
 
-/* ══ HISTORY PANEL — "Vorschau & Schnellzugriff": a real, per-device
-   log of exports generated from this browser (localStorage-backed).
-   Not cross-device/synced — that needs a real backend job, see the
-   automatic-export settings which are intentionally not built yet. ══ */
+/* ══ HISTORY PANEL — "Vorschau & Schnellzugriff": every export
+   generated on any device, read from the export_protokoll table. ══ */
 function relativeTime(iso, t) {
   const diffMin = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
   if (diffMin < 1) return t('adm_history_just_now')
@@ -160,7 +158,7 @@ function HistoryPanel({ history, onRemove }) {
       ) : (
         <div className="space-y-1.5">
           {history.map(entry => {
-            const meta = REPORT_META[entry.type] ?? { icon: 'download', color: '#9aa3ad', label: entry.type }
+            const meta = REPORT_META[entry.typ] ?? { icon: 'download', color: '#9aa3ad', label: entry.typ }
             return (
               <div key={entry.id} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-bg-2 transition-colors group">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
@@ -169,7 +167,9 @@ function HistoryPanel({ history, onRemove }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-medium truncate">{meta.label}{entry.detail ? ` — ${entry.detail}` : ''}</div>
-                  <div className="text-[11px] text-muted">{relativeTime(entry.at, t)}</div>
+                  <div className="text-[11px] text-muted truncate">
+                    {relativeTime(entry.created_at, t)}{entry.erstellt_von ? ` · ${entry.erstellt_von}` : ''}
+                  </div>
                 </div>
                 <button onClick={() => onRemove(entry.id)}
                         aria-label={t('common_delete')}
@@ -252,6 +252,7 @@ function QuickPickModal({ title, icon, color, options, onPick, onClose }) {
 
 export default function AdministrationPage({ articles }) {
   const { t } = useLanguage()
+  const { profile } = useAuth()
   const [lieferanten, setLieferanten] = useState([])
   const [bestellungen, setBestellungen] = useState([])
   const [projekte, setProjekte] = useState([])
@@ -268,39 +269,36 @@ export default function AdministrationPage({ articles }) {
   const [firma, setFirma] = useState(null)
   const [loading, setLoading] = useState(true)
   const [zipping, setZipping] = useState(false)
-  const [history, setHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) ?? [] } catch { return [] }
-  })
+  const [history, setHistory] = useState([])
   const [showGenerator, setShowGenerator] = useState(false)
   const [quickPick, setQuickPick] = useState(null) // 'inventur' | 'wareneingang' | 'projektbericht' | null
 
-  // type must match a REPORT_META key; detail is an optional suffix
-  // (e.g. the project name) appended to that type's fixed label.
-  const logHistory = useCallback((type, detail) => {
-    setHistory(h => {
-      const next = [{ id: Date.now(), type, detail: detail || null, at: new Date().toISOString() }, ...h].slice(0, 15)
-      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)) } catch { /* storage full/unavailable — history just won't persist */ }
-      return next
-    })
-  }, [])
+  // typ must match a REPORT_META key; detail is an optional suffix
+  // (e.g. the project name) appended to that type's fixed label. Stored
+  // in the DB so the history is shared across devices.
+  const logHistory = useCallback(async (typ, detail) => {
+    const { data } = await supabase.from('export_protokoll').insert({
+      typ, detail: detail || null,
+      erstellt_von: profile?.display_name ?? '', erstellt_von_id: profile?.id ?? null,
+    }).select().single()
+    if (data) setHistory(h => [data, ...h].slice(0, 15))
+  }, [profile])
 
-  const removeHistoryEntry = useCallback((id) => {
-    setHistory(h => {
-      const next = h.filter(e => e.id !== id)
-      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)) } catch { /* ignore */ }
-      return next
-    })
+  const removeHistoryEntry = useCallback(async (id) => {
+    await supabase.from('export_protokoll').delete().eq('id', id)
+    setHistory(h => h.filter(e => e.id !== id))
   }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: l }, { data: b }, { data: p }, { data: bw }, { data: inv }, { data: f }] = await Promise.all([
+    const [{ data: l }, { data: b }, { data: p }, { data: bw }, { data: inv }, { data: f }, { data: hist }] = await Promise.all([
       supabase.from('lieferanten').select('*'),
       supabase.from('bestellungen').select('*, lieferant:lieferanten(id,name,steuersatz), positionen:bestellung_positionen(*)').order('created_at'),
       supabase.from('projekte').select('*, material:projekt_material(*), zeiterfassung:projekt_zeiterfassung(*)').order('created_at'),
       supabase.from('warenbewegungen').select('*, projekte(dokument_nr)').order('created_at'),
       supabase.from('inventur_sessions').select('*, erfassungen:inventur_erfassungen(*)').order('created_at', { ascending: false }),
       supabase.from('firmendaten').select('*').eq('id', 1).single(),
+      supabase.from('export_protokoll').select('*').order('created_at', { ascending: false }).limit(15),
     ])
     setLieferanten(l ?? [])
     setBestellungen(b ?? [])
@@ -308,6 +306,7 @@ export default function AdministrationPage({ articles }) {
     setBewegungen(bw ?? [])
     setInventuren(inv ?? [])
     setFirma(f ?? null)
+    setHistory(hist ?? [])
     const vm = {}
     ;(bw ?? []).filter(m => m.typ === 'ausgang' && m.projekt_id).forEach(m => {
       vm[m.projekt_id] = vm[m.projekt_id] ?? {}
@@ -787,96 +786,144 @@ export default function AdministrationPage({ articles }) {
   }
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-[1700px] mx-auto">
-      <div className="flex items-start justify-between gap-3 flex-wrap mb-5">
+    <div className="p-3 sm:p-6 lg:p-8 space-y-5">
+      {/* Header — title, Berichtsgenerator, and next-auto-export preview */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('adm_title')}</h1>
           <p className="text-secondary text-sm">{t('adm_subtitle')}</p>
         </div>
-        <button onClick={() => setShowGenerator(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold shrink-0"
-                style={{ background: 'linear-gradient(135deg,#9b6bd9,#6f47a8)', color: '#fff' }}>
-          <Icon name="chart" size={15} color="#fff" /> {t('adm_generator_button')}
-        </button>
+        <div className="flex items-stretch gap-3 shrink-0">
+          <button onClick={() => setShowGenerator(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background: 'linear-gradient(135deg,#9b6bd9,#6f47a8)', color: '#fff' }}>
+            <Icon name="chart" size={15} color="#fff" /> {t('adm_generator_button')}
+          </button>
+          {/* Preview of the upcoming automatic-export feature — not wired
+              to a real scheduled job yet (Phase 2), so it shows a
+              coming-soon state rather than a fake "next run" date. */}
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-bg-1 border border-border">
+            <div>
+              <div className="text-[11px] text-muted">{t('adm_next_auto_export')}</div>
+              <div className="text-sm font-semibold text-secondary">{t('adm_coming_soon')}</div>
+            </div>
+            <Icon name="clipboard" size={18} color="#6b7480" />
+          </div>
+        </div>
       </div>
 
+      {/* Reports (PDF) + history side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        <div className="lg:col-span-2 space-y-5">
-          <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <h2 className="font-semibold text-sm mb-1">{t('adm_pdf_section')}</h2>
-            <p className="text-xs text-secondary mb-4">{t('adm_pdf_section_desc')}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
-              {pdfExports.map(e => <ExportButton key={e.title} {...e} buttonLabel={t('adm_pdf_create')} />)}
-            </div>
+        <Card className="lg:col-span-2 p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <h2 className="font-semibold text-sm mb-1">{t('adm_pdf_section')}</h2>
+          <p className="text-xs text-secondary mb-4">{t('adm_pdf_section_desc')}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-3">
+            {pdfExports.map(e => <ExportButton key={e.title} {...e} buttonLabel={t('adm_pdf_create')} />)}
+          </div>
 
-            <div className="flex items-start gap-2 p-4 bg-bg-2 border border-border rounded-xl">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
-                   style={{ background: `linear-gradient(135deg, ${REPORT_META.tagesbewegung.color}2e, ${REPORT_META.tagesbewegung.color}0f)`, '--tw-ring-color': `${REPORT_META.tagesbewegung.color}33` }}>
-                <Icon name={REPORT_META.tagesbewegung.icon} size={18} color={REPORT_META.tagesbewegung.color} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm mb-1">{t('adm_pdf_tagesbewegung')}</div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <input type="date" value={selectedTag} onChange={e => setSelectedTag(e.target.value)}
-                         className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber" />
-                  <select value={tagesTyp} onChange={e => setTagesTyp(e.target.value)}
-                          className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber">
-                    <option value="Alle">{t('bew_all_types')}</option>
-                    <option value="eingang">{t('bew_only_incoming')}</option>
-                    <option value="ausgang">{t('bew_only_outgoing')}</option>
-                  </select>
-                  <select value={tagesQuelle} onChange={e => setTagesQuelle(e.target.value)}
-                          className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber">
-                    <option value="Alle">{t('adm_tages_all_sources')}</option>
-                    <option value="bestellung">{t('adm_tages_source_bestellung')}</option>
-                    <option value="inventur">{t('adm_tages_source_inventur')}</option>
-                    <option value="manuell">{t('adm_tages_source_manuell')}</option>
-                    <option value="sonstige">{t('adm_tages_source_sonstige')}</option>
-                  </select>
-                </div>
-              </div>
-              <button onClick={exportTagesbewegungPdf}
-                      className="p-2.5 rounded-lg bg-bg-3 border border-border shrink-0">
-                <Icon name="download" size={15} color="#9aa3ad" />
-              </button>
+          <div className="flex items-start gap-2 p-4 bg-bg-2 border border-border rounded-xl">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-inset"
+                 style={{ background: `linear-gradient(135deg, ${REPORT_META.tagesbewegung.color}2e, ${REPORT_META.tagesbewegung.color}0f)`, '--tw-ring-color': `${REPORT_META.tagesbewegung.color}33` }}>
+              <Icon name={REPORT_META.tagesbewegung.icon} size={18} color={REPORT_META.tagesbewegung.color} />
             </div>
-          </Card>
-
-          <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <h2 className="font-semibold text-sm mb-1">{t('adm_csv_section')}</h2>
-            <p className="text-xs text-secondary mb-4">{t('adm_csv_section_desc')}</p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              {excelExports.map(e => <ExportButton key={e.title} {...e} />)}
-            </div>
-          </Card>
-
-          <Card className="p-4 sm:p-5" style={{ borderColor: '#e8821c55' }}>
-            <div className="flex items-start gap-3 flex-wrap justify-between">
-              <div>
-                <h2 className="font-semibold text-sm mb-1 flex items-center gap-2">
-                  <Icon name="download" size={15} color="#e8821c" /> {t('adm_zip_title')}
-                </h2>
-                <p className="text-xs text-secondary max-w-md">{t('adm_zip_desc')}</p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <select value={selectedJahr} onChange={e => setSelectedJahr(e.target.value)}
-                        className="bg-bg-2 border border-border rounded-lg px-2.5 py-2 text-xs outline-none focus:border-amber">
-                  {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm mb-1">{t('adm_pdf_tagesbewegung')}</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <input type="date" value={selectedTag} onChange={e => setSelectedTag(e.target.value)}
+                       className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber" />
+                <select value={tagesTyp} onChange={e => setTagesTyp(e.target.value)}
+                        className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber">
+                  <option value="Alle">{t('bew_all_types')}</option>
+                  <option value="eingang">{t('bew_only_incoming')}</option>
+                  <option value="ausgang">{t('bew_only_outgoing')}</option>
                 </select>
-                <button onClick={exportZip} disabled={zipping}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60"
-                        style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-                  <Icon name="download" size={15} color="#181c20" />
-                  {zipping ? t('adm_zip_building') : t('adm_zip_button')}
-                </button>
+                <select value={tagesQuelle} onChange={e => setTagesQuelle(e.target.value)}
+                        className="w-full bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-amber">
+                  <option value="Alle">{t('adm_tages_all_sources')}</option>
+                  <option value="bestellung">{t('adm_tages_source_bestellung')}</option>
+                  <option value="inventur">{t('adm_tages_source_inventur')}</option>
+                  <option value="manuell">{t('adm_tages_source_manuell')}</option>
+                  <option value="sonstige">{t('adm_tages_source_sonstige')}</option>
+                </select>
               </div>
             </div>
-          </Card>
-        </div>
+            <button onClick={exportTagesbewegungPdf}
+                    className="p-2.5 rounded-lg bg-bg-3 border border-border shrink-0">
+              <Icon name="download" size={15} color="#9aa3ad" />
+            </button>
+          </div>
+        </Card>
 
         <div className="lg:col-span-1">
           <HistoryPanel history={history} onRemove={removeHistoryEntry} />
         </div>
+      </div>
+
+      {/* Bottom row — Excel exports, ZIP bundle, and the (upcoming)
+          automation/retention settings side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 items-stretch">
+        <Card className="lg:col-span-2 p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <h2 className="font-semibold text-sm mb-1">{t('adm_csv_section')}</h2>
+          <p className="text-xs text-secondary mb-4">{t('adm_csv_section_desc')}</p>
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            {excelExports.map(e => <ExportButton key={e.title} {...e} />)}
+          </div>
+        </Card>
+
+        <Card className="lg:col-span-1 p-4 sm:p-5 flex flex-col" style={{ borderColor: '#e8821c55' }}>
+          <h2 className="font-semibold text-sm mb-1 flex items-center gap-2">
+            <Icon name="download" size={15} color="#e8821c" /> {t('adm_zip_title')}
+          </h2>
+          <p className="text-xs text-secondary mb-4 flex-1">{t('adm_zip_desc')}</p>
+          <select value={selectedJahr} onChange={e => setSelectedJahr(e.target.value)}
+                  className="w-full bg-bg-2 border border-border rounded-lg px-2.5 py-2 text-xs outline-none focus:border-amber mb-2.5">
+            {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button onClick={exportZip} disabled={zipping}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+            <Icon name="download" size={15} color="#181c20" />
+            {zipping ? t('adm_zip_building') : t('adm_zip_button')}
+          </button>
+        </Card>
+
+        {/* Automation & retention — visual placeholder for the Phase-2
+            automatic export; values are illustrative, not yet active. */}
+        <Card className="lg:col-span-1 p-4 sm:p-5 flex flex-col">
+          <h2 className="font-semibold text-sm mb-0.5">{t('adm_settings_title')}</h2>
+          <p className="text-xs text-secondary mb-4">{t('adm_settings_subtitle')}</p>
+          <div className="space-y-2.5 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-xs text-secondary">
+                <Icon name="refresh" size={13} color="#6b7480" /> {t('adm_settings_auto_export')}
+              </span>
+              <span className="text-xs font-medium text-amber">{t('adm_coming_soon')}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-xs text-secondary">
+                <Icon name="clipboard" size={13} color="#6b7480" /> {t('adm_settings_retention')}
+              </span>
+              <span className="text-xs font-medium text-muted">{t('adm_settings_retention_value')}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-xs text-secondary">
+                <Icon name="chart" size={13} color="#6b7480" /> {t('adm_settings_time')}
+              </span>
+              <span className="text-xs font-medium text-muted">{t('adm_settings_time_value')}</span>
+            </div>
+          </div>
+          <button disabled
+                  className="w-full flex items-center justify-center gap-2 mt-3 px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 border border-border text-muted opacity-60 cursor-not-allowed">
+            <Icon name="settings" size={13} color="#6b7480" /> {t('adm_settings_manage')}
+          </button>
+        </Card>
+      </div>
+
+      {/* Tipp */}
+      <div className="flex items-start gap-2.5 p-4 rounded-xl border"
+           style={{ background: 'linear-gradient(135deg,#9b6bd914,#9b6bd908)', borderColor: '#9b6bd940' }}>
+        <Icon name="alert" size={15} color="#9b6bd9" className="mt-0.5 shrink-0" />
+        <p className="text-xs text-secondary leading-relaxed">{t('adm_tipp')}</p>
       </div>
 
       {showGenerator && <ReportGeneratorModal items={generatorItems} onClose={() => setShowGenerator(false)} />}
