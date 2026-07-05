@@ -15,6 +15,7 @@ const PAGE_TITLE_KEYS = {
   '/lieferanten':   'nav_lieferanten',
   '/import':        'nav_import',
   '/administration': 'nav_administration',
+  '/kalender':      'nav_kalender',
   '/datenschutz':   'nav_datenschutz',
   '/einstellungen': 'nav_einstellungen',
 }

@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: '/uebersicht',   labelKey: 'nav_uebersicht',  icon: 'box' },
   { to: '/bewegung',     labelKey: 'nav_bewegung',    icon: 'truck' },
   { to: '/auftraege',    labelKey: 'nav_auftraege',   icon: 'clipboard', managerOnly: true },
+  { to: '/kalender',     labelKey: 'nav_kalender',    icon: 'calendar', managerOnly: true },
   { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', plainWorkerOnly: true },
   { to: '/lieferanten',  labelKey: 'nav_lieferanten', icon: 'building', managerOnly: true },
   { to: '/inventur',     labelKey: 'nav_inventur',    icon: 'filter' },

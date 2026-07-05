@@ -11,6 +11,7 @@ import { useLanguage } from '../hooks/useLanguage'
 import { supabase } from '../lib/supabase'
 import { isOffen } from '../lib/auftraegeHelpers'
 import { reconstructSeries, trendFor } from '../lib/kennzahlen'
+import { terminMeta, fmtUhrzeit, byUhrzeit, dateKey } from '../lib/termine'
 
 const fmt    = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n)
 const fmtDay = (d) => new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(d))
@@ -290,8 +291,10 @@ export default function HomePage({ articles = [], moves = [] }) {
   // past snapshot points can be rebuilt from real data.
   const [allBestellungen, setAllBestellungen] = useState([])
   const [allProjekte, setAllProjekte]         = useState([])
+  const [heuteTermine, setHeuteTermine]       = useState([])
   useEffect(() => {
     if (!isManager) return
+    const heute = dateKey(new Date())
     Promise.all([
       supabase.from('bestellungen').select('id, status, positionen:bestellung_positionen(menge, preis)').neq('status', 'eingetroffen'),
       supabase.from('projekte').select('id, name, status, rok, geplanter_beginn, created_at, verkaufspreis, material:projekt_material(geplant_menge, preis)').in('status', ['geplant', 'aktiv', 'pausiert']),
@@ -300,12 +303,14 @@ export default function HomePage({ articles = [], moves = [] }) {
         .order('created_at', { ascending: false }).limit(6),
       supabase.from('bestellungen').select('created_at, eingetroffen_at, status'),
       supabase.from('projekte').select('created_at, abgeschlossen_at, status, verkaufspreis, material:projekt_material(geplant_menge, preis)'),
-    ]).then(([{ data: best }, { data: proj }, { data: recent }, { data: allB }, { data: allP }]) => {
+      supabase.from('termine').select('*, projekt:projekte(name)').eq('datum', heute),
+    ]).then(([{ data: best }, { data: proj }, { data: recent }, { data: allB }, { data: allP }, { data: term }]) => {
       setBestellungen(best ?? [])
       setProjekte(proj ?? [])
       setRecentBestellungen(recent ?? [])
       setAllBestellungen(allB ?? [])
       setAllProjekte(allP ?? [])
+      setHeuteTermine((term ?? []).sort(byUhrzeit))
     })
   }, [isManager])
 
@@ -557,9 +562,9 @@ export default function HomePage({ articles = [], moves = [] }) {
       </div>
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden sm:block p-6 lg:px-8 lg:py-6 space-y-4">
+      <div className="hidden sm:block p-6 lg:px-8 lg:py-5 space-y-3.5">
         {/* Hero banner — warehouse aisle with a legibility gradient */}
-        <div className="relative overflow-hidden rounded-2xl border border-border h-28 lg:h-32 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.5)]">
+        <div className="relative overflow-hidden rounded-2xl border border-border h-24 lg:h-28 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.5)]">
           <HeroWarehouse />
           <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(8,10,13,0.95) 0%, rgba(8,10,13,0.82) 34%, rgba(8,10,13,0.35) 62%, rgba(8,10,13,0) 100%)' }} />
           <div className="relative h-full flex items-center justify-between px-7 lg:px-9">
@@ -704,19 +709,48 @@ export default function HomePage({ articles = [], moves = [] }) {
                 </button>
               </Card>
 
-              {/* Heute anstehend — coming soon (planner/calendar later) */}
+              {/* Heute anstehend — today's calendar appointments */}
               <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex flex-col">
                 <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
                   <Icon name="clipboard" size={15} color="#4a90d9" /> {t('home_today_schedule')}
                 </h3>
-                <div className="flex-1 flex flex-col items-center justify-center text-center py-8 gap-2">
-                  <div className="w-11 h-11 rounded-xl flex items-center justify-center"
-                       style={{ background: 'linear-gradient(135deg, #4a90d92e, #4a90d90f)' }}>
-                    <Icon name="clipboard" size={20} color="#4a90d9" />
+                {heuteTermine.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center py-8 gap-2">
+                    <div className="w-11 h-11 rounded-xl flex items-center justify-center"
+                         style={{ background: 'linear-gradient(135deg, #4a90d92e, #4a90d90f)' }}>
+                      <Icon name="clipboard" size={20} color="#4a90d9" />
+                    </div>
+                    <div className="text-sm font-semibold text-secondary">{t('home_no_termine')}</div>
+                    <p className="text-xs text-muted max-w-[200px]">{t('home_no_termine_desc')}</p>
                   </div>
-                  <div className="text-sm font-semibold text-secondary">{t('home_coming_soon')}</div>
-                  <p className="text-xs text-muted max-w-[200px]">{t('home_planner_soon')}</p>
-                </div>
+                ) : (
+                  <div className="relative pl-4 space-y-3">
+                    {/* timeline spine */}
+                    <div className="absolute left-[5px] top-1.5 bottom-1.5 w-px bg-border" />
+                    {heuteTermine.map(tm => {
+                      const meta = terminMeta(tm.typ)
+                      return (
+                        <button key={tm.id} onClick={() => navigate('/kalender')}
+                                className={`relative w-full text-left flex items-start gap-3 group ${tm.erledigt ? 'opacity-55' : ''}`}>
+                          <span className="absolute -left-4 top-1.5 w-2.5 h-2.5 rounded-full ring-2 ring-bg-1" style={{ background: meta.color }} />
+                          <span className="text-xs font-mono font-semibold w-11 shrink-0" style={{ color: meta.color }}>
+                            {fmtUhrzeit(tm.uhrzeit) || t('kal_allday')}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-sm font-medium truncate group-hover:text-amber transition-colors ${tm.erledigt ? 'line-through' : ''}`}>{tm.titel}</div>
+                            {(tm.ort || tm.projekt?.name) && (
+                              <div className="text-[11px] text-muted truncate">{[tm.ort, tm.projekt?.name].filter(Boolean).join(' · ')}</div>
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                <button onClick={() => navigate('/kalender')}
+                        className="flex items-center gap-1.5 text-xs font-medium text-amber hover:gap-2.5 transition-all mt-auto pt-3">
+                  {t('home_to_calendar')} <Icon name="chevronRight" size={13} color="#e8821c" />
+                </button>
               </Card>
             </div>
 

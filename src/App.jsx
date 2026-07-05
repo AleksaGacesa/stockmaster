@@ -18,6 +18,7 @@ const EinstellungenPage = lazy(() => import('./pages/EinstellungenPage'))
 const LieferantenPage   = lazy(() => import('./pages/LieferantenPage'))
 const AuftraegePage     = lazy(() => import('./pages/AuftraegePage'))
 const AdministrationPage = lazy(() => import('./pages/AdministrationPage'))
+const KalenderPage       = lazy(() => import('./pages/KalenderPage'))
 const DatenschutzPage    = lazy(() => import('./pages/DatenschutzPage'))
 const WorkerProjectsPage = lazy(() => import('./pages/WorkerProjectsPage'))
 
@@ -172,6 +173,14 @@ function AppInner() {
             <ManagerRoute>
               <Suspense fallback={<PageLoader />}>
                 <AdministrationPage articles={articles} />
+              </Suspense>
+            </ManagerRoute>
+          } />
+
+          <Route path="/kalender" element={
+            <ManagerRoute>
+              <Suspense fallback={<PageLoader />}>
+                <KalenderPage />
               </Suspense>
             </ManagerRoute>
           } />

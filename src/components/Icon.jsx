@@ -36,6 +36,9 @@ const PATHS = {
   sun:         <path d="M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M12 3l0 1 M12 20l0 1 M4.22 4.22l.7.7 M18.36 18.36l.36.36 M3 12l1 0 M20 12l1 0 M4.22 19.78l.7-.7 M18.36 5.64l.36-.36"/>,
   moon:        <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1-8.313-12.454z"/>,
   globe:       <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0 M3.6 9h16.8 M3.6 15h16.8 M11.5 3a17 17 0 0 0 0 18 M12.5 3a17 17 0 0 1 0 18"/>,
+  clock:       <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0 M12 7v5l3 2"/>,
+  calendar:    <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z M16 3v4 M8 3v4 M4 11h16 M11 15h1 M12 15v3"/>,
+  alarm:       <path d="M12 13m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0 M12 10v3l2 2 M7 4l-2.5 2 M17 4l2.5 2"/>,
 }
 
 export default function Icon({ name, size = 20, color = 'currentColor', className = '' }) {

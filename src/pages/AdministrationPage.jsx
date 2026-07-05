@@ -151,7 +151,7 @@ function relativeTime(iso, t) {
 function HistoryPanel({ history, onRemove }) {
   const { t } = useLanguage()
   return (
-    <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+    <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] lg:h-full">
       <h2 className="font-semibold text-sm mb-3.5">{t('adm_history_title')}</h2>
       {history.length === 0 ? (
         <p className="text-xs text-muted">{t('adm_history_empty')}</p>
@@ -786,7 +786,7 @@ export default function AdministrationPage({ articles }) {
   }
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 space-y-5">
+    <div className="p-3 sm:p-6 lg:px-8 lg:py-5 flex flex-col gap-3.5 lg:min-h-full">
       {/* Header — title, Berichtsgenerator, and next-auto-export preview */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
@@ -812,12 +812,12 @@ export default function AdministrationPage({ articles }) {
         </div>
       </div>
 
-      {/* Reports (PDF) + history side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        <Card className="lg:col-span-2 p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      {/* Reports (PDF) + history side by side — grows to fill height */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:flex-1">
+        <Card className="lg:col-span-2 p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex flex-col">
           <h2 className="font-semibold text-sm mb-1">{t('adm_pdf_section')}</h2>
           <p className="text-xs text-secondary mb-4">{t('adm_pdf_section_desc')}</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-3 lg:flex-1 lg:auto-rows-fr">
             {pdfExports.map(e => <ExportButton key={e.title} {...e} buttonLabel={t('adm_pdf_create')} />)}
           </div>
 
@@ -854,7 +854,7 @@ export default function AdministrationPage({ articles }) {
           </div>
         </Card>
 
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 lg:h-full">
           <HistoryPanel history={history} onRemove={removeHistoryEntry} />
         </div>
       </div>
