@@ -148,7 +148,7 @@ function relativeTime(iso, t) {
   return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
 }
 
-function HistoryPanel({ history, onRemove }) {
+function HistoryPanel({ history, onRemove, onPreview, previewable }) {
   const { t } = useLanguage()
   return (
     <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] lg:h-full">
@@ -159,18 +159,29 @@ function HistoryPanel({ history, onRemove }) {
         <div className="space-y-1.5">
           {history.map(entry => {
             const meta = REPORT_META[entry.typ] ?? { icon: 'download', color: '#9aa3ad', label: entry.typ }
+            const canPreview = previewable.has(entry.typ)
             return (
               <div key={entry.id} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-bg-2 transition-colors group">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                     style={{ background: `linear-gradient(135deg, ${meta.color}2e, ${meta.color}0f)` }}>
-                  <Icon name={meta.icon} size={14} color={meta.color} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium truncate">{meta.label}{entry.detail ? ` — ${entry.detail}` : ''}</div>
-                  <div className="text-[11px] text-muted truncate">
-                    {relativeTime(entry.created_at, t)}{entry.erstellt_von ? ` · ${entry.erstellt_von}` : ''}
+                <button onClick={() => canPreview && onPreview(entry)} disabled={!canPreview}
+                        className={`flex items-center gap-2.5 flex-1 min-w-0 text-left ${canPreview ? 'cursor-pointer' : 'cursor-default'}`}
+                        title={canPreview ? t('adm_preview') : undefined}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                       style={{ background: `linear-gradient(135deg, ${meta.color}2e, ${meta.color}0f)` }}>
+                    <Icon name={meta.icon} size={14} color={meta.color} />
                   </div>
-                </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate">{meta.label}{entry.detail ? ` — ${entry.detail}` : ''}</div>
+                    <div className="text-[11px] text-muted truncate">
+                      {relativeTime(entry.created_at, t)}{entry.erstellt_von ? ` · ${entry.erstellt_von}` : ''}
+                    </div>
+                  </div>
+                </button>
+                {canPreview && (
+                  <button onClick={() => onPreview(entry)} aria-label={t('adm_preview')}
+                          className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-bg-3 transition-opacity shrink-0">
+                    <Icon name="eye" size={13} color="#6b7480" />
+                  </button>
+                )}
                 <button onClick={() => onRemove(entry.id)}
                         aria-label={t('common_delete')}
                         className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-bg-3 transition-opacity shrink-0">
@@ -185,39 +196,6 @@ function HistoryPanel({ history, onRemove }) {
   )
 }
 
-/* ══ REPORT GENERATOR — quick-picker modal listing every report so
-   you don't have to scroll to find one. Calls the exact same export
-   functions as their dedicated buttons below. ══ */
-function ReportGeneratorModal({ items, onClose }) {
-  const { t } = useLanguage()
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-bg-1 border border-border w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl max-h-[80dvh] flex flex-col"
-           onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <h2 className="text-base font-semibold">{t('adm_generator_title')}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2">
-            <Icon name="x" size={16} color="#9aa3ad" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-          {items.map(item => (
-            <button key={item.title} onClick={() => { item.onClick(); onClose() }} disabled={item.disabled}
-                    className="w-full flex items-center gap-3 p-3 bg-bg-2 border border-border rounded-xl hover:border-[var(--accent)] transition-colors text-left disabled:opacity-40 disabled:pointer-events-none"
-                    style={{ '--accent': item.color }}>
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                   style={{ background: `linear-gradient(135deg, ${item.color}2e, ${item.color}0f)` }}>
-                <Icon name={item.icon} size={16} color={item.color} />
-              </div>
-              <span className="flex-1 min-w-0 text-sm font-medium truncate">{item.title}</span>
-              <Icon name="download" size={14} color="#6b7480" />
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 /* ══ QUICK-PICK MODAL — for the 3 report cards that need one specific
    record (which Inventur session / Bestellung / Projekt) instead of
@@ -270,15 +248,18 @@ export default function AdministrationPage({ articles }) {
   const [loading, setLoading] = useState(true)
   const [zipping, setZipping] = useState(false)
   const [history, setHistory] = useState([])
-  const [showGenerator, setShowGenerator] = useState(false)
   const [quickPick, setQuickPick] = useState(null) // 'inventur' | 'wareneingang' | 'projektbericht' | null
+  const [now, setNow] = useState(new Date())
+  useEffect(() => { const id = setInterval(() => setNow(new Date()), 20000); return () => clearInterval(id) }, [])
 
-  // typ must match a REPORT_META key; detail is an optional suffix
-  // (e.g. the project name) appended to that type's fixed label. Stored
-  // in the DB so the history is shared across devices.
-  const logHistory = useCallback(async (typ, detail) => {
+  // typ must match a REPORT_META key; detail is an optional display
+  // suffix (e.g. the project name); ref holds the machine parameter
+  // (record id / year / date) so the report can be regenerated for an
+  // in-browser preview later. Stored in the DB so the history is
+  // shared across devices.
+  const logHistory = useCallback(async (typ, detail, ref) => {
     const { data } = await supabase.from('export_protokoll').insert({
-      typ, detail: detail || null,
+      typ, detail: detail || null, ref: ref != null ? String(ref) : null,
       erstellt_von: profile?.display_name ?? '', erstellt_von_id: profile?.id ?? null,
     }).select().single()
     if (data) setHistory(h => [data, ...h].slice(0, 15))
@@ -663,11 +644,11 @@ export default function AdministrationPage({ articles }) {
 
   const exportLieferantenPdf    = async () => { (await buildLieferantenPdf()).save(`Lieferantenuebersicht_${today()}.pdf`); logHistory('lieferanten') }
   const exportLagerbewertungPdf = async () => { (await buildLagerbewertungPdf()).save(`Lagerbewertung_${today()}.pdf`); logHistory('lagerbewertung') }
-  const exportJahresberichtPdf  = async () => { (await buildJahresberichtPdf(Number(selectedJahr))).save(`Jahresbericht_${selectedJahr}.pdf`); logHistory('jahresbericht', String(selectedJahr)) }
+  const exportJahresberichtPdf  = async () => { (await buildJahresberichtPdf(Number(selectedJahr))).save(`Jahresbericht_${selectedJahr}.pdf`); logHistory('jahresbericht', String(selectedJahr), selectedJahr) }
   const exportTagesbewegungPdf  = async () => {
     const suffix = [tagesTyp !== 'Alle' ? tagesTyp : null, tagesQuelle !== 'Alle' ? tagesQuelle : null].filter(Boolean).join('_')
     ;(await buildTagesbewegungPdf(selectedTag, tagesTyp, tagesQuelle)).save(`Tagesbewegung_${selectedTag}${suffix ? '_' + suffix : ''}.pdf`)
-    logHistory('tagesbewegung', selectedTag)
+    logHistory('tagesbewegung', selectedTag, selectedTag)
   }
 
   // Each accepts an optional id override so the quick-pick modal can
@@ -677,20 +658,53 @@ export default function AdministrationPage({ articles }) {
     const session = inventuren.find(s => String(s.id) === String(idOverride ?? selectedInventurId))
     if (!session) return
     ;(await buildInventurPdf(session)).save(`Inventurliste_${session.dokument_nr || session.id}.pdf`)
-    logHistory('inventur', session.name)
+    logHistory('inventur', session.name, session.id)
   }
   const exportWareneingangPdf = async (idOverride) => {
     const b = bestellungen.find(x => String(x.id) === String(idOverride ?? selectedWareneingangId))
     if (!b) return
     ;(await buildWareneingangPdf(b)).save(`Wareneingang_${b.wareneingang_nr || b.id}.pdf`)
-    logHistory('wareneingang', b.lieferant?.name)
+    logHistory('wareneingang', b.lieferant?.name, b.id)
   }
   const exportProjektberichtPdf = async (idOverride) => {
     const p = projekte.find(x => String(x.id) === String(idOverride ?? selectedProjektId))
     if (!p) return
     ;(await buildProjektberichtPdf(p)).save(`Projektbericht_${p.dokument_nr || p.id}.pdf`)
-    logHistory('projektbericht', p.name)
+    logHistory('projektbericht', p.name, p.id)
   }
+
+  // Regenerate a saved report and open it as a PDF preview in a new
+  // browser tab (no download). Only the PDF report types are
+  // previewable; Excel/ZIP exports are download-only.
+  const previewHistory = useCallback(async (entry) => {
+    // Open the tab synchronously (keeps the click's user-gesture so it
+    // isn't blocked), then point it at the freshly built PDF.
+    const win = window.open('', '_blank')
+    try {
+      let doc = null
+      switch (entry.typ) {
+        case 'lieferanten':    doc = await buildLieferantenPdf(); break
+        case 'lagerbewertung': doc = await buildLagerbewertungPdf(); break
+        case 'jahresbericht':  doc = await buildJahresberichtPdf(Number(entry.ref) || new Date().getFullYear()); break
+        case 'tagesbewegung':  doc = await buildTagesbewegungPdf(entry.ref || today(), 'Alle', 'Alle'); break
+        case 'inventur': {
+          const s = inventuren.find(x => String(x.id) === String(entry.ref)); if (s) doc = await buildInventurPdf(s); break
+        }
+        case 'wareneingang': {
+          const b = bestellungen.find(x => String(x.id) === String(entry.ref)); if (b) doc = await buildWareneingangPdf(b); break
+        }
+        case 'projektbericht': {
+          const p = projekte.find(x => String(x.id) === String(entry.ref)); if (p) doc = await buildProjektberichtPdf(p); break
+        }
+        default: { if (win) win.close(); return }
+      }
+      if (doc && win) win.location.href = doc.output('bloburl')
+      else if (win) win.close()
+    } catch { if (win) win.close() }
+  }, [buildLieferantenPdf, buildLagerbewertungPdf, buildJahresberichtPdf, buildTagesbewegungPdf, buildInventurPdf, buildWareneingangPdf, buildProjektberichtPdf, inventuren, bestellungen, projekte])
+
+  // Types whose saved history entry can be re-opened as a PDF preview.
+  const PREVIEWABLE = new Set(['lieferanten', 'lagerbewertung', 'inventur', 'wareneingang', 'projektbericht', 'jahresbericht', 'tagesbewegung'])
 
   /* ══ ZIP BUNDLE — everything above, packaged for the Steuerberater ══ */
   const exportZip = async () => {
@@ -773,12 +787,6 @@ export default function AdministrationPage({ articles }) {
     { icon: REPORT_META.jahresbericht.icon,  color: REPORT_META.jahresbericht.color,  title: t('adm_pdf_jahresbericht'), desc: t('adm_pdf_jahresbericht_desc'), onClick: exportJahresberichtPdf },
   ]
 
-  const generatorItems = [
-    ...pdfExports.filter(e => !e.disabled),
-    ...excelExports.filter(e => !e.disabled),
-    { icon: REPORT_META.zip.icon, color: REPORT_META.zip.color, title: t('adm_zip_title'), onClick: exportZip },
-  ]
-
   const quickPickMeta = {
     inventur:       { title: t('adm_pdf_inventur'),       options: inventurOptions,       onPick: (id) => { setSelectedInventurId(id); exportInventurPdf(id) } },
     wareneingang:   { title: t('adm_pdf_wareneingang'),    options: wareneingangOptions,    onPick: (id) => { setSelectedWareneingangId(id); exportWareneingangPdf(id) } },
@@ -787,18 +795,24 @@ export default function AdministrationPage({ articles }) {
 
   return (
     <div className="p-3 sm:p-6 lg:px-8 lg:py-5 flex flex-col gap-3.5 lg:min-h-full">
-      {/* Header — title, Berichtsgenerator, and next-auto-export preview */}
+      {/* Header — title, live clock, and next-auto-export preview */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('adm_title')}</h1>
           <p className="text-secondary text-sm">{t('adm_subtitle')}</p>
         </div>
         <div className="flex items-stretch gap-3 shrink-0">
-          <button onClick={() => setShowGenerator(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{ background: 'linear-gradient(135deg,#9b6bd9,#6f47a8)', color: '#fff' }}>
-            <Icon name="chart" size={15} color="#fff" /> {t('adm_generator_button')}
-          </button>
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-bg-1 border border-border">
+            <Icon name="clock" size={18} color="#6b7480" />
+            <div>
+              <div className="text-[11px] text-muted leading-tight capitalize">
+                {new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(now)}
+              </div>
+              <div className="text-sm font-semibold font-mono text-secondary leading-tight">
+                {new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(now)}
+              </div>
+            </div>
+          </div>
           {/* Preview of the upcoming automatic-export feature — not wired
               to a real scheduled job yet (Phase 2), so it shows a
               coming-soon state rather than a fake "next run" date. */}
@@ -855,7 +869,7 @@ export default function AdministrationPage({ articles }) {
         </Card>
 
         <div className="lg:col-span-1 lg:h-full">
-          <HistoryPanel history={history} onRemove={removeHistoryEntry} />
+          <HistoryPanel history={history} onRemove={removeHistoryEntry} onPreview={previewHistory} previewable={PREVIEWABLE} />
         </div>
       </div>
 
@@ -925,8 +939,6 @@ export default function AdministrationPage({ articles }) {
         <Icon name="alert" size={15} color="#9b6bd9" className="mt-0.5 shrink-0" />
         <p className="text-xs text-secondary leading-relaxed">{t('adm_tipp')}</p>
       </div>
-
-      {showGenerator && <ReportGeneratorModal items={generatorItems} onClose={() => setShowGenerator(false)} />}
 
       {quickPick && (
         <QuickPickModal
