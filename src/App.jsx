@@ -21,6 +21,7 @@ const AdministrationPage = lazy(() => import('./pages/AdministrationPage'))
 const KalenderPage       = lazy(() => import('./pages/KalenderPage'))
 const DatenschutzPage    = lazy(() => import('./pages/DatenschutzPage'))
 const WorkerProjectsPage = lazy(() => import('./pages/WorkerProjectsPage'))
+const MontagenPage       = lazy(() => import('./pages/MontagenPage'))
 
 function PageLoader() {
   return (
@@ -183,6 +184,12 @@ function AppInner() {
                 <KalenderPage />
               </Suspense>
             </ManagerRoute>
+          } />
+
+          <Route path="/montagen" element={
+            <Suspense fallback={<PageLoader />}>
+              <MontagenPage />
+            </Suspense>
           } />
 
           <Route path="/datenschutz" element={

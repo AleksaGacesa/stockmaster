@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: '/dashboard',    labelKey: 'nav_dashboard',   icon: 'chart',    managerOnly: true },
   { to: '/uebersicht',   labelKey: 'nav_uebersicht',  icon: 'box' },
   { to: '/bewegung',     labelKey: 'nav_bewegung',    icon: 'truck' },
+  { to: '/montagen',     labelKey: 'nav_montagen',    icon: 'mapPin' },
   { to: '/auftraege',    labelKey: 'nav_auftraege',   icon: 'clipboard', managerOnly: true },
   { to: '/kalender',     labelKey: 'nav_kalender',    icon: 'calendar', managerOnly: true },
   { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', plainWorkerOnly: true },
