@@ -764,8 +764,8 @@ export default function MontagenPage() {
           {/* my running montage (manager works on the roof too) */}
           {offenMeine && <MontageLive offen={offenMeine} montagen={montagen} onChanged={load} />}
 
-          {/* grouped table */}
-          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          {/* grouped table — grows to fill the leftover height */}
+          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col">
             <div className="px-4 pt-4 pb-2">
               <h3 className="font-semibold text-sm">{t('mon_table_title')}</h3>
             </div>
@@ -773,7 +773,7 @@ export default function MontagenPage() {
               <p className="text-sm text-muted text-center py-10">{t('mon_keine')}</p>
             ) : (
               <>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto flex-1">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
@@ -919,8 +919,8 @@ export default function MontagenPage() {
             )}
           </Card>
 
-          {/* bottom charts row — grows to fill the leftover height */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1">
+          {/* bottom charts row — natural height, pushed to the bottom */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-auto">
             <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex flex-col">
               <h3 className="font-semibold text-sm mb-4">{t('mon_zeit_chart')}</h3>
               <div className="flex-1 flex flex-col justify-center">

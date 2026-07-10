@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -6,6 +6,8 @@ import Card from '../components/Card'
 import Icon from '../components/Icon'
 import StockBadge from '../components/StockBadge'
 import StatusDot from '../components/StatusDot'
+import ArtikelBild from '../components/ArtikelBild'
+import DonutChart from '../components/DonutChart'
 import { useLanguage } from '../hooks/useLanguage'
 import {
   fmt, fmtDt, STATUS_META, bestellungTotal, bestellungBrutto,
@@ -31,6 +33,7 @@ function LieferantFormModal({ lieferant, onClose, onSaved }) {
   const isNew = !lieferant?.id
   const [form, setForm] = useState({
     name: '', email: '', telefon: '', ansprechpartner: '', adresse: '', notiz: '', bestellnachricht: '', steuersatz: 19,
+    bewertung: 0, lieferzeit: '', versandart: '',
     ...(lieferant || {})
   })
   const [saving, setSaving]             = useState(false)
@@ -46,6 +49,8 @@ function LieferantFormModal({ lieferant, onClose, onSaved }) {
       name: form.name.trim(), email: form.email.trim(), telefon: form.telefon.trim(),
       ansprechpartner: form.ansprechpartner.trim(), adresse: form.adresse.trim(), notiz: form.notiz.trim(),
       bestellnachricht: form.bestellnachricht.trim(), steuersatz: Number(form.steuersatz) || 0,
+      bewertung: Math.min(Math.max(Number(form.bewertung) || 0, 0), 5),
+      lieferzeit: form.lieferzeit.trim(), versandart: form.versandart.trim(),
     }
     const { error: err } = isNew
       ? await supabase.from('lieferanten').insert(data)
@@ -68,6 +73,9 @@ function LieferantFormModal({ lieferant, onClose, onSaved }) {
     { k: 'ansprechpartner', label: t('lief_field_contact'), ph: 'Max Mustermann' },
     { k: 'adresse',         label: t('lief_field_address'), ph: 'Musterstraße 1, 12345 Berlin' },
     { k: 'steuersatz',      label: t('lief_field_tax'),    ph: '19', type: 'number' },
+    { k: 'bewertung',       label: t('lief_field_rating'), ph: '4,5', type: 'number' },
+    { k: 'lieferzeit',      label: t('lief_field_leadtime'), ph: '2-3 Tage' },
+    { k: 'versandart',      label: t('lief_field_shipping'), ph: 'Standard / Express' },
     { k: 'notiz',           label: t('lief_field_note'),   ph: 'z.B. Zahlungsziel 30 Tage', full: true },
     { k: 'bestellnachricht', label: t('lief_field_default_message'),
       ph: 'z.B. "Bitte Lieferung Mo–Fr 8–16 Uhr, Anlieferung über den Hof."', full: true },
@@ -223,76 +231,537 @@ function AddToBestellungPopup({ artikel, lieferanten, onClose, onAdd, lastPurcha
   )
 }
 
-/* ══ ARTIKEL BESTELLEN TAB ══ */
-function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase }) {
-  const { t } = useLanguage()
-  const [search, setSearch]     = useState('')
-  const [onlyKnapp, setOnlyKnapp] = useState(false)
+/* ══ ARTIKEL BESTELLEN TAB — Bestell-Dashboard ══ */
+const bestandStatus = (a) => a.menge < a.mindestbestand ? 'niedrig'
+  : a.menge < a.mindestbestand * 1.5 ? 'knapp' : 'ausreichend'
+const BESTAND_META = {
+  ausreichend: { labelKey: 'lief_status_ausreichend', color: '#4caf6e' },
+  knapp:       { labelKey: 'lief_status_knapp',       color: '#e8821c' },
+  niedrig:     { labelKey: 'lief_status_niedrig',     color: '#e0524a' },
+  bestellt:    { labelKey: 'lief_status_bestellt',    color: '#9aa3ad' },
+}
 
+function BestandBadge({ status }) {
+  const { t } = useLanguage()
+  const m = BESTAND_META[status]
+  return (
+    <span className="text-xs font-semibold pl-1.5 pr-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1.5"
+          style={{ background: m.color + '1a', color: m.color }}>
+      <StatusDot color={m.color} pulse={status === 'niedrig'} size={6} />
+      {t(m.labelKey)}
+    </span>
+  )
+}
+
+function Sterne({ value }) {
+  if (!value || Number(value) <= 0) return <span className="text-muted text-xs">—</span>
+  return (
+    <span className="inline-flex items-center gap-1 text-xs">
+      <Icon name="star" size={11} color="#e8b23c" />
+      <span className="font-mono font-semibold">{Number(value).toFixed(1).replace('.', ',')}</span>
+    </span>
+  )
+}
+
+function LiefSparkline({ points, color }) {
+  const W = 96, H = 30
+  if (!points || points.length < 2) return <svg width={W} height={H} />
+  const min = Math.min(...points), max = Math.max(...points)
+  const span = max - min || 1
+  const pts = points.map((v, i) =>
+    `${(i / (points.length - 1)) * W},${H - 3 - ((v - min) / span) * (H - 6)}`
+  ).join(' ')
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8"
+                strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function LiefStatCard({ label, value, sub, subColor, icon, color, spark }) {
+  return (
+    <Card className="p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: color + '1f' }}>
+          <Icon name={icon} size={15} color={color} />
+        </div>
+        <span className="text-xs text-secondary leading-tight">{label}</span>
+      </div>
+      <div className="flex items-end justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-lg font-bold font-mono truncate">{value}</div>
+          <div className="text-[11px] mt-0.5 truncate" style={{ color: subColor ?? 'rgb(var(--text-muted))' }}>
+            {sub ?? ' '}
+          </div>
+        </div>
+        {spark && <LiefSparkline points={spark} color={color} />}
+      </div>
+    </Card>
+  )
+}
+
+const ART_PAGE = 10
+
+function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unterwegs,
+                                lieferanten, bestellungen, onShowLieferanten, onOpenBestellung }) {
+  const { t, lang } = useLanguage()
+  const [search, setSearch] = useState('')
+  const [filterBestand, setFilterBestand]     = useState('alle')
+  const [filterKategorie, setFilterKategorie] = useState('alle')
+  const [filterLieferant, setFilterLieferant] = useState('alle')
+  const [view, setView] = useState('tabelle')
+  const [page, setPage] = useState(0)
+  const [expandedId, setExpandedId] = useState(null)
+  const [showAllAct, setShowAllAct] = useState(false)
+
+  useEffect(() => { setPage(0) }, [search, filterBestand, filterKategorie, filterLieferant])
+
+  const liefById = useMemo(() => new Map(lieferanten.map(l => [l.id, l])), [lieferanten])
+  const kategorien = useMemo(() => [...new Set(articles.map(a => a.kategorie).filter(Boolean))].sort(), [articles])
+
+  /* ── headline stats ── */
+  const jetzt = new Date()
+  const wocheAgo = new Date(Date.now() - 7 * 86400000)
+  const sameMonth = (d, ref) => d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth()
+  const offene = bestellungen.filter(b => b.status !== 'eingetroffen')
+  const inTransit = bestellungen.filter(b => b.status === 'gesendet' || b.status === 'bestaetigt')
+  const neueWoche = bestellungen.filter(b => new Date(b.created_at) >= wocheAgo).length
+  const eingetroffenMonat = bestellungen.filter(b => b.eingetroffen_at && sameMonth(new Date(b.eingetroffen_at), jetzt))
+  const eingetroffenWoche = bestellungen.filter(b => b.eingetroffen_at && new Date(b.eingetroffen_at) >= wocheAgo).length
+  const wertMonat = bestellungen
+    .filter(b => sameMonth(new Date(b.created_at), jetzt))
+    .reduce((s, b) => s + bestellungTotal(b), 0)
+  const bewertete = lieferanten.filter(l => Number(l.bewertung) > 0)
+  const avgBewertung = bewertete.length
+    ? bewertete.reduce((s, l) => s + Number(l.bewertung), 0) / bewertete.length
+    : null
+
+  const sparks = useMemo(() => {
+    const erstellt = [], erhalten = [], wert = []
+    for (let i = 5; i >= 0; i--) {
+      const von = new Date(Date.now() - (i + 1) * 7 * 86400000)
+      const bis = new Date(Date.now() - i * 7 * 86400000)
+      erstellt.push(bestellungen.filter(b => { const d = new Date(b.created_at); return d >= von && d < bis }).length)
+      erhalten.push(bestellungen.filter(b => { const d = b.eingetroffen_at && new Date(b.eingetroffen_at); return d && d >= von && d < bis }).length)
+    }
+    for (let i = 5; i >= 0; i--) {
+      const ref = new Date(jetzt.getFullYear(), jetzt.getMonth() - i, 1)
+      wert.push(bestellungen.filter(b => sameMonth(new Date(b.created_at), ref)).reduce((s, b) => s + bestellungTotal(b), 0))
+    }
+    // No rating history exists — the sorted current ratings stand in as
+    // a decorative but real-data line.
+    const bewertungen = lieferanten.map(l => Number(l.bewertung)).filter(v => v > 0).sort((a, b) => a - b)
+    return { erstellt, erhalten, wert, bewertungen: bewertungen.length > 1 ? bewertungen : null }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bestellungen, lieferanten])
+
+  const wertDelta = (() => {
+    const prev = sparks.wert[4], cur = sparks.wert[5]
+    if (!prev) return null
+    const d = ((cur - prev) / Math.abs(prev)) * 100
+    return `${d >= 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')}% ${t('auf_vs_last_month')}`
+  })()
+  const bewertungWort = avgBewertung === null ? null
+    : avgBewertung >= 4.5 ? t('lief_sehr_gut') : avgBewertung >= 3.5 ? t('lief_gut') : t('lief_okay')
+
+  /* ── article filtering + paging ── */
+  const artStatus = (a) => unterwegs[a.id] > 0 ? 'bestellt' : bestandStatus(a)
   const filtered = articles.filter(a => {
     const q = search.toLowerCase()
+    const st = bestandStatus(a)
     return (
-      (!q || a.name.toLowerCase().includes(q) || a.nummer.toLowerCase().includes(q)) &&
-      (!onlyKnapp || a.menge < a.mindestbestand)
+      (!q || a.name.toLowerCase().includes(q) || a.nummer.toLowerCase().includes(q) || (a.lieferant ?? '').toLowerCase().includes(q)) &&
+      (filterBestand === 'alle' || st === filterBestand) &&
+      (filterKategorie === 'alle' || a.kategorie === filterKategorie) &&
+      (filterLieferant === 'alle' || a.lieferant_id === Number(filterLieferant))
     )
   })
+  const pageCount = Math.max(Math.ceil(filtered.length / ART_PAGE), 1)
+  const safePage = Math.min(page, pageCount - 1)
+  const paged = filtered.slice(safePage * ART_PAGE, safePage * ART_PAGE + ART_PAGE)
+  const from = filtered.length === 0 ? 0 : safePage * ART_PAGE + 1
+  const to = Math.min((safePage + 1) * ART_PAGE, filtered.length)
+
+  /* ── right panel data ── */
+  const donutData = useMemo(() => {
+    const counts = { ausreichend: 0, niedrig: 0, knapp: 0, bestellt: 0 }
+    articles.forEach(a => { counts[artStatus(a)] += 1 })
+    return [
+      { label: t('lief_status_ausreichend'), value: counts.ausreichend, color: '#4caf6e' },
+      { label: t('lief_status_niedrig'),     value: counts.niedrig,     color: '#e0524a' },
+      { label: t('lief_status_knapp'),       value: counts.knapp,       color: '#e8821c' },
+      { label: t('lief_status_bestellt'),    value: counts.bestellt,    color: '#9aa3ad' },
+    ]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [articles, unterwegs, t])
+  const niedrigList = articles.filter(a => bestandStatus(a) === 'niedrig').slice(0, 5)
+  const topLief = [...lieferanten].filter(l => Number(l.bewertung) > 0)
+    .sort((a, b) => Number(b.bewertung) - Number(a.bewertung)).slice(0, 5)
+
+  const activities = useMemo(() => {
+    const out = []
+    bestellungen.forEach(b => {
+      const nr = b.dokument_nr ?? `#${b.id}`
+      const name = b.lieferant?.name ?? ''
+      out.push({ at: b.created_at, icon: 'plus', color: '#4a90d9', text: t('lief_akt_erstellt'), sub: `${nr} ${t('lief_an')} ${name}`, id: b.id })
+      if (b.gesendet_at) out.push({ at: b.gesendet_at, icon: 'mail', color: '#e8821c', text: t('lief_akt_gesendet'), sub: `${nr} ${t('lief_an')} ${name}`, id: b.id })
+      if (b.eingetroffen_at) out.push({ at: b.eingetroffen_at, icon: 'check', color: '#4caf6e', text: t('lief_akt_erhalten'), sub: `${nr} ${t('lief_von')} ${name}`, id: b.id })
+    })
+    return out.sort((a, b) => new Date(b.at) - new Date(a.at))
+  }, [bestellungen, t])
+  const fmtAkt = (ts) => {
+    const d = new Date(ts)
+    const heute = new Date().toDateString() === d.toDateString()
+    const zeit = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(d)
+    return heute ? `${t('mon_heute')}, ${zeit}` : `${fmtDt(d)}`
+  }
+
+  /* ── shared article row (compact list, mobile + Karten view) ── */
+  const compactList = (
+    <div className="space-y-1.5">
+      {paged.map(a => (
+        <div key={a.id} className="bg-bg-1 border border-border rounded-xl px-3 py-2.5 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 hidden sm:block">
+            <ArtikelBild artikel={a} iconSize={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-medium text-sm truncate flex-1">{a.name}</span>
+              <StockBadge menge={a.menge} mindestbestand={a.mindestbestand} />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted min-w-0">
+              <span className="font-mono text-amber shrink-0">{a.nummer}</span>
+              <span className="font-mono shrink-0">{a.menge} {a.einheit}</span>
+              {a.lieferant && <span className="truncate">· {a.lieferant}</span>}
+            </div>
+            {lastPurchase[a.id] && (
+              <div className="text-[11px] text-muted mt-0.5">
+                {t('lief_last_purchase')}: {fmtDt(lastPurchase[a.id].created_at)} · {lastPurchase[a.id].menge} {a.einheit} ·{' '}
+                {fmt(lastPurchase[a.id].preis ?? 0)}/{a.einheit}
+              </div>
+            )}
+          </div>
+          <button onClick={() => onOpenAdd(a)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold shrink-0"
+                  style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+            <Icon name="plus" size={13} color="#181c20" /> {t('lief_order_button')}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2 items-center flex-wrap">
-        <div className="relative flex-1 min-w-[160px]">
+    <div className="space-y-4">
+      {/* ── stat cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3">
+        <LiefStatCard label={t('lief_stat_offene')} value={offene.length} icon="cart" color="#e8821c"
+                      sub={neueWoche > 0 ? `+${neueWoche} ${t('lief_seit_woche')}` : undefined}
+                      subColor="rgb(var(--color-green))" spark={sparks.erstellt} />
+        <LiefStatCard label={t('lief_stat_unterwegs')} value={inTransit.length} icon="truck" color="#9b6bd9"
+                      sub={`${inTransit.length} ${t('lief_lieferungen')}`} spark={sparks.erstellt.map((v, i) => v + sparks.erhalten[i])} />
+        <LiefStatCard label={t('lief_stat_eingetroffen')} value={eingetroffenMonat.length} icon="check" color="#4caf6e"
+                      sub={eingetroffenWoche > 0 ? `+${eingetroffenWoche} ${t('lief_seit_woche')}` : undefined}
+                      subColor="rgb(var(--color-green))" spark={sparks.erhalten} />
+        <LiefStatCard label={t('lief_stat_wert')} value={fmt(wertMonat)} icon="chart" color="#4caf6e"
+                      sub={wertDelta} subColor="rgb(var(--color-green))" spark={sparks.wert} />
+        <LiefStatCard label={t('lief_stat_bewertung')} value={avgBewertung === null ? '—' : `${avgBewertung.toFixed(1).replace('.', ',')} / 5`}
+                      icon="star" color="#e8b23c" sub={bewertungWort} spark={sparks.bewertungen} />
+      </div>
+
+      {/* ── filter bar ── */}
+      <Card className="p-3 flex flex-wrap gap-2 items-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+        <div className="relative flex-1 min-w-[180px]">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
             <Icon name="search" size={13} color="#6b7480" />
           </div>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('lief_search_article_ph')}
-                 className="w-full bg-bg-2 border border-border rounded-xl pl-8 pr-3 py-2.5 text-sm outline-none focus:border-amber" />
+                 className="w-full bg-bg-2 border border-border rounded-xl pl-8 pr-3 py-2 text-sm outline-none focus:border-amber" />
         </div>
-        <button onClick={() => setOnlyKnapp(v => !v)}
-                className={`text-xs font-medium px-3 py-2.5 rounded-xl border transition-colors shrink-0 ${
-                  onlyKnapp ? 'border-amber text-amber bg-amber-dim' : 'border-border text-secondary bg-bg-2'
-                }`}>
-          {t('lief_only_low_stock')}
-        </button>
-      </div>
+        <select value={filterBestand} onChange={e => setFilterBestand(e.target.value)}
+                className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+          <option value="alle">{t('lief_bestand_alle')}</option>
+          <option value="niedrig">{t('lief_nur_niedrig')}</option>
+          <option value="knapp">{t('lief_nur_knapp')}</option>
+        </select>
+        <select value={filterKategorie} onChange={e => setFilterKategorie(e.target.value)}
+                className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+          <option value="alle">{t('lief_alle_kategorien')}</option>
+          {kategorien.map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <select value={filterLieferant} onChange={e => setFilterLieferant(e.target.value)}
+                className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+          <option value="alle">{t('lief_alle_lieferanten')}</option>
+          {lieferanten.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+        <div className="hidden lg:flex items-center gap-1 bg-bg-2 border border-border rounded-xl p-1">
+          <button onClick={() => setView('tabelle')} title="Tabelle"
+                  className={`p-1.5 rounded-lg transition-colors ${view === 'tabelle' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+            <Icon name="list" size={14} color="currentColor" />
+          </button>
+          <button onClick={() => setView('liste')} title="Kompakt"
+                  className={`p-1.5 rounded-lg transition-colors ${view === 'liste' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+            <Icon name="grid" size={14} color="currentColor" />
+          </button>
+        </div>
+      </Card>
 
       {justAdded && (
-        <div className="flex items-center gap-2 text-green text-xs bg-green-dim rounded-xl px-3 py-2">
+        <div className="flex items-center gap-2 text-green text-xs bg-green-dim rounded-xl px-3 py-2 animate-fade-up">
           <Icon name="check" size={13} color="#4caf6e" /> {justAdded}
         </div>
       )}
 
-      {filtered.length === 0 ? (
-        <Card className="p-8 text-center text-muted text-sm">{t('ueb_no_articles')}</Card>
-      ) : (
-        <div className="space-y-1.5">
-          {filtered.map(a => (
-            <div key={a.id} className="bg-bg-1 border border-border rounded-xl px-3 py-2.5 flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-sm truncate flex-1">{a.name}</span>
-                  <StockBadge menge={a.menge} mindestbestand={a.mindestbestand} />
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted min-w-0">
-                  <span className="font-mono text-amber shrink-0">{a.nummer}</span>
-                  <span className="font-mono shrink-0">{a.menge} {a.einheit}</span>
-                  {a.lieferant && <span className="truncate">· {a.lieferant}</span>}
-                </div>
-                {lastPurchase[a.id] && (
-                  <div className="text-[11px] text-muted mt-0.5">
-                    {t('lief_last_purchase')}: {fmtDt(lastPurchase[a.id].created_at)} · {lastPurchase[a.id].menge} {a.einheit} ·{' '}
-                    {fmt(lastPurchase[a.id].preis ?? 0)}/{a.einheit}
+      {/* Columns stretch so the article card fills down to the bottom
+          of the viewport instead of stopping at its content height. */}
+      <div className="flex flex-col xl:flex-row gap-4 xl:min-h-[calc(100vh-380px)]">
+        {/* ══ MAIN: article table ══ */}
+        <div className="flex-1 min-w-0 w-full flex flex-col">
+          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col">
+            {filtered.length === 0 ? (
+              <p className="p-8 text-center text-muted text-sm">{t('ueb_no_articles')}</p>
+            ) : (
+              <>
+                {/* compact list on small screens / Karten view */}
+                <div className={view === 'liste' ? 'p-3' : 'p-3 lg:hidden'}>{compactList}</div>
+                {view === 'tabelle' && (
+                  <div className="hidden lg:block overflow-x-auto flex-1">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
+                          <th className="px-4 py-2.5 font-medium">{t('lief_col_artikel')}</th>
+                          <th className="px-4 py-2.5 font-medium">{t('lief_col_details')}</th>
+                          <th className="px-4 py-2.5 font-medium">{t('lief_col_lager')}</th>
+                          <th className="px-4 py-2.5 font-medium">{t('lief_col_lieferant')}</th>
+                          <th className="px-4 py-2.5 font-medium">{t('lief_col_lieferzeit')}</th>
+                          <th className="px-4 py-2.5 font-medium">{t('lief_col_status')}</th>
+                          <th className="px-4 py-2.5 font-medium text-right">{t('lief_col_aktion')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paged.map(a => {
+                          const st = artStatus(a)
+                          const lief = liefById.get(a.lieferant_id)
+                          const expanded = expandedId === a.id
+                          return (
+                            <Fragment key={a.id}>
+                              <tr onClick={() => setExpandedId(expanded ? null : a.id)}
+                                  className={`border-b border-border cursor-pointer transition-colors ${expanded ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 border border-border">
+                                      <ArtikelBild artikel={a} iconSize={15} />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="font-medium truncate max-w-[190px]">{a.name}</div>
+                                      <div className="text-[11px] font-mono text-amber">{a.nummer}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5 text-xs text-secondary">
+                                  <div className="truncate max-w-[160px]">{a.menge} {a.einheit}{a.lieferant ? ` · ${a.lieferant}` : ''}</div>
+                                  <div className="text-muted truncate max-w-[160px]">{[a.kategorie, a.lagerort].filter(Boolean).join(' · ')}</div>
+                                </td>
+                                <td className="px-4 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 font-mono text-xs">
+                                    <StatusDot color={BESTAND_META[bestandStatus(a)].color} pulse={bestandStatus(a) === 'niedrig'} size={7} />
+                                    {a.menge} {a.einheit}
+                                  </div>
+                                  <div className="text-[11px] text-muted font-mono mt-0.5">{t('lief_min_short')} {a.mindestbestand}</div>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <div className="text-xs truncate max-w-[140px]">{a.lieferant || '—'}</div>
+                                  <div className="mt-0.5"><Sterne value={lief?.bewertung} /></div>
+                                </td>
+                                <td className="px-4 py-2.5 whitespace-nowrap">
+                                  <div className="text-xs">{lief?.lieferzeit || '—'}</div>
+                                  {lief?.versandart && <div className="text-[11px] text-muted">{lief.versandart}</div>}
+                                </td>
+                                <td className="px-4 py-2.5"><BestandBadge status={st} /></td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button onClick={e => { e.stopPropagation(); onOpenAdd(a) }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                            style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                                      <Icon name="plus" size={12} color="#181c20" /> {t('lief_order_button')}
+                                    </button>
+                                    <button onClick={e => { e.stopPropagation(); setExpandedId(expanded ? null : a.id) }}
+                                            className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
+                                      <Icon name="dots" size={14} color="#9aa3ad" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                              {expanded && (
+                                <tr className="border-b border-border bg-bg-0/40">
+                                  <td colSpan={7} className="px-6 py-2.5 text-xs text-secondary">
+                                    <div className="flex flex-wrap gap-x-6 gap-y-1">
+                                      {lastPurchase[a.id] ? (
+                                        <span>{t('lief_last_purchase')}: {fmtDt(lastPurchase[a.id].created_at)} · {lastPurchase[a.id].menge} {a.einheit} · {fmt(lastPurchase[a.id].preis ?? 0)}/{a.einheit}</span>
+                                      ) : (
+                                        <span className="text-muted">{t('lief_no_purchase_yet')}</span>
+                                      )}
+                                      {unterwegs[a.id] > 0 && (
+                                        <span className="text-amber font-medium">{unterwegs[a.id]} {a.einheit} {t('lief_unterwegs_hint')}</span>
+                                      )}
+                                      <span className="text-muted">{fmt(a.preis)} / {a.einheit}</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
-              </div>
-              <button onClick={() => onOpenAdd(a)}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold shrink-0"
-                      style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-                <Icon name="plus" size={13} color="#181c20" /> {t('lief_order_button')}
-              </button>
-            </div>
-          ))}
+                {/* pagination */}
+                <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted flex-wrap gap-2">
+                  <span>
+                    {lang === 'en'
+                      ? `Showing ${from} to ${to} of ${filtered.length} articles`
+                      : `Zeige ${from} bis ${to} von ${filtered.length} Artikeln`}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}
+                            className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-bg-2 transition-colors">
+                      <Icon name="chevronLeft" size={12} color="#9aa3ad" />
+                    </button>
+                    {Array.from({ length: Math.min(pageCount, 7) }).map((_, i) => (
+                      <button key={i} onClick={() => setPage(i)}
+                              className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                                i === safePage ? 'bg-amber text-bg-0' : 'border border-border text-secondary hover:bg-bg-2'
+                              }`}>
+                        {i + 1}
+                      </button>
+                    ))}
+                    <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}
+                            className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-bg-2 transition-colors">
+                      <Icon name="chevronRight" size={12} color="#9aa3ad" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </Card>
         </div>
-      )}
+
+        {/* ══ RIGHT PANEL ══ */}
+        <div className="w-full xl:w-80 shrink-0 space-y-4">
+          {/* Bestellübersicht donut */}
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <h3 className="font-semibold text-sm mb-3">{t('lief_uebersicht_titel')}</h3>
+            <div className="flex items-center gap-4">
+              <div className="relative shrink-0">
+                <DonutChart data={donutData} size={110} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-lg font-bold font-mono">{articles.length}</span>
+                  <span className="text-[9px] text-muted">{t('lief_gesamt')}</span>
+                </div>
+              </div>
+              <div className="space-y-1.5 flex-1 min-w-0">
+                {donutData.map(d => {
+                  const total = donutData.reduce((s, x) => s + x.value, 0) || 1
+                  return (
+                    <div key={d.label} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />
+                      <span className="text-secondary truncate flex-1">{d.label}</span>
+                      <span className="font-mono shrink-0">{d.value} ({Math.round((d.value / total) * 100)}%)</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </Card>
+
+          {/* Niedriger Bestand */}
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <h3 className="font-semibold text-sm mb-3">{t('lief_niedriger_bestand')}</h3>
+            {niedrigList.length === 0 ? (
+              <p className="text-xs text-muted text-center py-3">{t('lief_kein_niedrig')}</p>
+            ) : (
+              <div className="space-y-2">
+                {niedrigList.map((a, i) => (
+                  <button key={a.id} onClick={() => onOpenAdd(a)}
+                          className="w-full flex items-center gap-2.5 text-left animate-fade-up hover:bg-bg-2 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
+                          style={{ animationDelay: `${i * 40}ms` }}>
+                    <StatusDot color="#e0524a" pulse size={7} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate">{a.name}</div>
+                      <div className="text-[11px] text-muted font-mono">{a.menge} {a.einheit}</div>
+                    </div>
+                    <span className="text-[11px] font-mono font-semibold text-red shrink-0">{t('lief_min_short')} {a.mindestbestand}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setFilterBestand('niedrig')}
+                    className="w-full flex items-center justify-center gap-1.5 text-xs text-secondary border border-border rounded-lg py-2 mt-3 hover:bg-bg-2 transition-colors">
+              {t('lief_alle_anzeigen')} <Icon name="chevronRight" size={12} color="currentColor" />
+            </button>
+          </Card>
+
+          {/* Top Lieferanten */}
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <h3 className="font-semibold text-sm mb-3">{t('lief_top_lieferanten')}</h3>
+            {topLief.length === 0 ? (
+              <p className="text-xs text-muted text-center py-3">—</p>
+            ) : (
+              <div className="space-y-2">
+                {topLief.map((l, i) => (
+                  <div key={l.id} className="flex items-center gap-2.5 animate-fade-up" style={{ animationDelay: `${i * 40}ms` }}>
+                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                          style={{ background: ['#4caf6e', '#4a90d9', '#e8821c', '#9b6bd9', '#3fb6c4'][i] ?? '#9aa3ad' }}>
+                      {i + 1}
+                    </span>
+                    <span className="text-xs truncate flex-1">{l.name}</span>
+                    <Sterne value={l.bewertung} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={onShowLieferanten}
+                    className="w-full flex items-center justify-center gap-1.5 text-xs text-secondary border border-border rounded-lg py-2 mt-3 hover:bg-bg-2 transition-colors">
+              {t('lief_alle_lieferanten')} <Icon name="chevronRight" size={12} color="currentColor" />
+            </button>
+          </Card>
+
+          {/* Letzte Aktivitäten */}
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <h3 className="font-semibold text-sm mb-3">{t('lief_aktivitaeten')}</h3>
+            {activities.length === 0 ? (
+              <p className="text-xs text-muted text-center py-3">—</p>
+            ) : (
+              <>
+                <div className="space-y-2.5">
+                  {activities.slice(0, showAllAct ? 15 : 3).map((a, i) => (
+                    <button key={`${a.at}-${i}`} onClick={() => onOpenBestellung(a.id)}
+                            className="w-full flex items-start gap-2.5 text-left animate-fade-up hover:bg-bg-2 rounded-lg px-2 py-1 -mx-2 transition-colors"
+                            style={{ animationDelay: `${i * 30}ms` }}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                           style={{ background: a.color + '1f' }}>
+                        <Icon name={a.icon} size={13} color={a.color} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium">{a.text}</div>
+                        <div className="text-[11px] text-muted truncate">{a.sub}</div>
+                      </div>
+                      <span className="text-[10px] text-muted font-mono shrink-0 mt-0.5">{fmtAkt(a.at)}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setShowAllAct(s => !s)}
+                        className="w-full flex items-center justify-center gap-1.5 text-xs text-secondary border border-border rounded-lg py-2 mt-3 hover:bg-bg-2 transition-colors">
+                  {showAllAct ? t('mon_weniger_akt') : t('lief_alle_akt')}
+                  <Icon name="chevronRight" size={12} color="currentColor" />
+                </button>
+              </>
+            )}
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1289,7 +1758,11 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
   ]
   const renderTabContent = () => {
     if (tab === 'bestellen') return <ArtikelBestellenTab articles={articles} onOpenAdd={setAddPopupArtikel}
-                                                           justAdded={justAdded} lastPurchase={lastPurchase} />
+                                                           justAdded={justAdded} lastPurchase={lastPurchase}
+                                                           unterwegs={unterwegs} lieferanten={lieferanten}
+                                                           bestellungen={bestellungen}
+                                                           onShowLieferanten={() => setTab('lieferanten')}
+                                                           onOpenBestellung={setActiveBestellungId} />
     if (tab === 'bestellungen') return <BestellungenTab bestellungen={bestellungen} lieferanten={lieferanten}
                                                           onOpenDetail={setActiveBestellungId}
                                                           initialFilterLief={jumpFilterLief} onFilterLiefConsumed={() => setJumpFilterLief(null)} />
@@ -1323,9 +1796,16 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
 
       {/* ══ DESKTOP ══ */}
       <div className="hidden sm:block p-6 lg:p-8">
-        <div className="mb-5">
-          <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('lief_title')}</h1>
-          <p className="text-secondary text-sm">{t('lief_subtitle')}</p>
+        <div className="mb-5 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('lief_title')}</h1>
+            <p className="text-secondary text-sm">{t('lief_subtitle')}</p>
+          </div>
+          <button onClick={() => openNewBestellung(null)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+            <Icon name="plus" size={15} color="#181c20" /> {t('lief_new_order')}
+          </button>
         </div>
         <div className="flex gap-1 border-b border-border mb-6">
           {TABS.map(([id, label, icon]) => (
