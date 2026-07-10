@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -301,8 +301,6 @@ function LiefStatCard({ label, value, sub, subColor, icon, color, spark }) {
   )
 }
 
-const ART_PAGE = 10
-
 function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unterwegs,
                                 lieferanten, bestellungen, onShowLieferanten, onOpenBestellung }) {
   const { t, lang } = useLanguage()
@@ -316,6 +314,24 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
   const [showAllAct, setShowAllAct] = useState(false)
 
   useEffect(() => { setPage(0) }, [search, filterBestand, filterKategorie, filterLieferant])
+
+  // The card stretches to the bottom of the viewport, so the page size
+  // adapts to how many ~57px rows actually fit instead of a fixed 10.
+  // Measured from the card's top edge (stable regardless of row count,
+  // so no feedback loop), re-measured on window resize.
+  const tableTopRef = useRef(null)
+  const [pageSize, setPageSize] = useState(10)
+  useEffect(() => {
+    const calc = () => {
+      const el = tableTopRef.current
+      if (!el || el.offsetParent === null) return
+      const avail = window.innerHeight - el.getBoundingClientRect().top - 46 - 36 - 40
+      setPageSize(Math.min(Math.max(Math.floor(avail / 57), 8), 30))
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [])
 
   const liefById = useMemo(() => new Map(lieferanten.map(l => [l.id, l])), [lieferanten])
   const kategorien = useMemo(() => [...new Set(articles.map(a => a.kategorie).filter(Boolean))].sort(), [articles])
@@ -377,11 +393,11 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
       (filterLieferant === 'alle' || a.lieferant_id === Number(filterLieferant))
     )
   })
-  const pageCount = Math.max(Math.ceil(filtered.length / ART_PAGE), 1)
+  const pageCount = Math.max(Math.ceil(filtered.length / pageSize), 1)
   const safePage = Math.min(page, pageCount - 1)
-  const paged = filtered.slice(safePage * ART_PAGE, safePage * ART_PAGE + ART_PAGE)
-  const from = filtered.length === 0 ? 0 : safePage * ART_PAGE + 1
-  const to = Math.min((safePage + 1) * ART_PAGE, filtered.length)
+  const paged = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
+  const from = filtered.length === 0 ? 0 : safePage * pageSize + 1
+  const to = Math.min((safePage + 1) * pageSize, filtered.length)
 
   /* ── right panel data ── */
   const donutData = useMemo(() => {
@@ -517,7 +533,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
           of the viewport instead of stopping at its content height. */}
       <div className="flex flex-col xl:flex-row gap-4 xl:min-h-[calc(100vh-380px)]">
         {/* ══ MAIN: article table ══ */}
-        <div className="flex-1 min-w-0 w-full flex flex-col">
+        <div ref={tableTopRef} className="flex-1 min-w-0 w-full flex flex-col">
           <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col">
             {filtered.length === 0 ? (
               <p className="p-8 text-center text-muted text-sm">{t('ueb_no_articles')}</p>
