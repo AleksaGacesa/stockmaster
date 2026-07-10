@@ -651,8 +651,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                   </div>
                 )}
                 {/* pagination */}
-                <div ref={paginationRef}
-                     className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted flex-wrap gap-2">
+                <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted flex-wrap gap-2">
                   <span>
                     {lang === 'en'
                       ? `Showing ${from} to ${to} of ${filtered.length} articles`
