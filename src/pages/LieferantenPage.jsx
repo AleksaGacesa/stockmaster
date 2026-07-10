@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -315,26 +315,31 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
 
   useEffect(() => { setPage(0) }, [search, filterBestand, filterKategorie, filterLieferant])
 
-  // The card stretches to the bottom of the viewport, so the page size
-  // adapts to how many ~57px rows actually fit instead of a fixed 10.
-  // Measured from the card's top edge (stable regardless of row count,
-  // so no feedback loop), re-measured on window resize.
-  const tableTopRef = useRef(null)
+  // Adaptive page size: instead of estimating row heights, measure the
+  // real position of the pagination bar after every render and correct
+  // the row count until it sits just above the viewport bottom — shrink
+  // whenever it overflows (this is what kills the page scrollbar), grow
+  // only when more than 1.5 rows of slack remain (hysteresis, so it
+  // can't flip-flop). Window resizes trigger a re-measure via a tick.
+  const paginationRef = useRef(null)
   const [pageSize, setPageSize] = useState(10)
+  const [, setResizeTick] = useState(0)
   useEffect(() => {
-    const calc = () => {
-      const el = tableTopRef.current
-      if (!el || el.offsetParent === null) return
-      // Reserved: pagination bar (~46) + thead (~36) + card border and
-      // page bottom padding (~48). 62px per two-line row, measured
-      // conservatively so the page never gains a scrollbar.
-      const avail = window.innerHeight - el.getBoundingClientRect().top - 130
-      setPageSize(Math.min(Math.max(Math.floor(avail / 62), 8), 30))
-    }
-    calc()
-    window.addEventListener('resize', calc)
-    return () => window.removeEventListener('resize', calc)
+    const onResize = () => setResizeTick(v => v + 1)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
+  useLayoutEffect(() => {
+    const pag = paginationRef.current
+    if (!pag || pag.offsetParent === null) return
+    const ROW = 62
+    const overshoot = pag.getBoundingClientRect().bottom + 28 - window.innerHeight
+    if (overshoot > 0) {
+      setPageSize(s => Math.max(8, s - Math.ceil(overshoot / ROW)))
+    } else if (overshoot < -ROW * 1.5) {
+      setPageSize(s => Math.min(30, s + Math.floor(-overshoot / ROW) - 1))
+    }
+  })
 
   const liefById = useMemo(() => new Map(lieferanten.map(l => [l.id, l])), [lieferanten])
   const kategorien = useMemo(() => [...new Set(articles.map(a => a.kategorie).filter(Boolean))].sort(), [articles])
@@ -537,7 +542,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
           which previously overshot and caused a page scrollbar. */}
       <div className="flex flex-col xl:flex-row gap-4">
         {/* ══ MAIN: article table ══ */}
-        <div ref={tableTopRef} className="flex-1 min-w-0 w-full flex flex-col">
+        <div className="flex-1 min-w-0 w-full flex flex-col">
           <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col">
             {filtered.length === 0 ? (
               <p className="p-8 text-center text-muted text-sm">{t('ueb_no_articles')}</p>
@@ -638,7 +643,8 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                   </div>
                 )}
                 {/* pagination */}
-                <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted flex-wrap gap-2">
+                <div ref={paginationRef}
+                     className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted flex-wrap gap-2">
                   <span>
                     {lang === 'en'
                       ? `Showing ${from} to ${to} of ${filtered.length} articles`
