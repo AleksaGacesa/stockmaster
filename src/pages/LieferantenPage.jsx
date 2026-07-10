@@ -315,31 +315,41 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
 
   useEffect(() => { setPage(0) }, [search, filterBestand, filterKategorie, filterLieferant])
 
-  // Adaptive page size: instead of estimating row heights, measure the
-  // real position of the pagination bar after every render and correct
-  // the row count until it sits just above the viewport bottom — shrink
-  // whenever it overflows (this is what kills the page scrollbar), grow
-  // only when more than 1.5 rows of slack remain (hysteresis, so it
-  // can't flip-flop). Window resizes trigger a re-measure via a tick.
-  const paginationRef = useRef(null)
-  const [pageSize, setPageSize] = useState(10)
-  const [, setResizeTick] = useState(0)
+  // On xl screens the whole tab gets a hard height down to the viewport
+  // bottom (measured from its stable top edge). Inside it the table
+  // column and the right panel each manage their own overflow — the
+  // right panel was taller than the viewport, which is what kept
+  // bringing the page scrollbar back no matter the table's row count.
+  const rootRef = useRef(null)
+  const [tabH, setTabH] = useState(null)
   useEffect(() => {
-    const onResize = () => setResizeTick(v => v + 1)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-  useLayoutEffect(() => {
-    const pag = paginationRef.current
-    if (!pag || pag.offsetParent === null) return
-    const ROW = 62
-    const overshoot = pag.getBoundingClientRect().bottom + 28 - window.innerHeight
-    if (overshoot > 0) {
-      setPageSize(s => Math.max(8, s - Math.ceil(overshoot / ROW)))
-    } else if (overshoot < -ROW * 1.5) {
-      setPageSize(s => Math.min(30, s + Math.floor(-overshoot / ROW) - 1))
+    const calc = () => {
+      const el = rootRef.current
+      if (!el) return
+      setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 28, 420))
     }
-  })
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [])
+
+  // Page size from the table box's real flex-assigned height. The box
+  // is min-h-0 + overflow-hidden, so its size comes from the layout,
+  // not from the rows — no measure/grow feedback loop. Below xl the
+  // page scrolls normally and the default of 10 stays.
+  const tableBoxRef = useRef(null)
+  const [pageSize, setPageSize] = useState(10)
+  useLayoutEffect(() => {
+    const el = tableBoxRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      if (!window.matchMedia('(min-width: 1280px)').matches) { setPageSize(10); return }
+      const h = el.clientHeight
+      if (h > 0) setPageSize(Math.min(Math.max(Math.floor((h - 36) / 64), 5), 40))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   const liefById = useMemo(() => new Map(lieferanten.map(l => [l.id, l])), [lieferanten])
   const kategorien = useMemo(() => [...new Set(articles.map(a => a.kategorie).filter(Boolean))].sort(), [articles])
@@ -477,9 +487,10 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
   )
 
   return (
-    <div className="space-y-4">
+    <div ref={rootRef} className="space-y-4 xl:flex xl:flex-col xl:overflow-hidden xl:h-[var(--tab-h)]"
+         style={{ '--tab-h': tabH ? `${tabH}px` : 'auto' }}>
       {/* ── stat cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3 xl:shrink-0">
         <LiefStatCard label={t('lief_stat_offene')} value={offene.length} icon="cart" color="#e8821c"
                       sub={neueWoche > 0 ? `+${neueWoche} ${t('lief_seit_woche')}` : undefined}
                       subColor="rgb(var(--color-green))" spark={sparks.erstellt} />
@@ -495,7 +506,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
       </div>
 
       {/* ── filter bar ── */}
-      <Card className="p-3 flex flex-wrap gap-2 items-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <Card className="p-3 flex flex-wrap gap-2 items-center shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
         <div className="relative flex-1 min-w-[180px]">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
             <Icon name="search" size={13} color="#6b7480" />
@@ -537,13 +548,10 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
         </div>
       )}
 
-      {/* The article card's height follows the adaptive page size (as
-          many rows as fit to the viewport bottom) — no forced min-h,
-          which previously overshot and caused a page scrollbar. */}
-      <div className="flex flex-col xl:flex-row gap-4">
+      <div className="flex flex-col xl:flex-row gap-4 xl:flex-1 xl:min-h-0">
         {/* ══ MAIN: article table ══ */}
-        <div className="flex-1 min-w-0 w-full flex flex-col">
-          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col">
+        <div className="flex-1 min-w-0 w-full flex flex-col xl:min-h-0">
+          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col xl:min-h-0">
             {filtered.length === 0 ? (
               <p className="p-8 text-center text-muted text-sm">{t('ueb_no_articles')}</p>
             ) : (
@@ -551,7 +559,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                 {/* compact list on small screens / Karten view */}
                 <div className={view === 'liste' ? 'p-3' : 'p-3 lg:hidden'}>{compactList}</div>
                 {view === 'tabelle' && (
-                  <div className="hidden lg:block overflow-x-auto flex-1">
+                  <div ref={tableBoxRef} className="hidden lg:block overflow-x-auto flex-1 xl:min-h-0 xl:overflow-y-hidden">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
@@ -674,8 +682,9 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
           </Card>
         </div>
 
-        {/* ══ RIGHT PANEL ══ */}
-        <div className="w-full xl:w-80 shrink-0 space-y-4">
+        {/* ══ RIGHT PANEL — scrolls internally on xl, it is taller than
+            the viewport and must not scroll the whole page ══ */}
+        <div className="w-full xl:w-80 shrink-0 space-y-4 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
           {/* Bestellübersicht donut */}
           <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <h3 className="font-semibold text-sm mb-3">{t('lief_uebersicht_titel')}</h3>
