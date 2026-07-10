@@ -13,6 +13,7 @@ import {
   fmt, fmtDt, STATUS_META, isOffen, isSpaet, materialGeplantWert,
   projektGewinn, projektRealisierterGewinn, buildReservierungMap,
   projektArbeitsstunden, projektElapsedStunden, projektArbeitskosten, offeneSegmente,
+  durchschnittGewinnmarge, projektLaufzeitTage,
 } from '../lib/auftraegeHelpers'
 import { STATUS_META as BESTELLUNG_STATUS_META, bestellungTotal } from '../lib/bestellungHelpers'
 
@@ -948,16 +949,85 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
     </div>
   )
 }
+/* ══ DASHBOARD WIDGETS (list view) ══ */
+function AufSparkline({ points, color }) {
+  const W = 96, H = 30
+  if (!points || points.length < 2) return <svg width={W} height={H} />
+  const min = Math.min(...points), max = Math.max(...points)
+  const span = max - min || 1
+  const pts = points.map((v, i) =>
+    `${(i / (points.length - 1)) * W},${H - 3 - ((v - min) / span) * (H - 6)}`
+  ).join(' ')
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8"
+                strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
-/* ══ MAIN PAGE ══ */
+function AufStatMini({ label, value, sub, subColor, icon, color, valueColor, spark }) {
+  return (
+    <Card className="p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+             style={{ background: color + '1f' }}>
+          <Icon name={icon} size={15} color={color} />
+        </div>
+        <span className="text-xs text-secondary leading-tight">{label}</span>
+      </div>
+      <div className="flex items-end justify-between gap-2">
+        <div className="min-w-0">
+          <div className={`text-lg font-bold font-mono truncate ${valueColor ?? ''}`}>{value}</div>
+          <div className="text-[11px] mt-0.5 truncate" style={{ color: subColor ?? 'rgb(var(--text-muted))' }}>
+            {sub ?? ' '}
+          </div>
+        </div>
+        {spark && <AufSparkline points={spark} color={color} />}
+      </div>
+    </Card>
+  )
+}
+
+// Elapsed-time progress (planned start → deadline), same reference as
+// the Home timeline card. Completed projects pin to 100%.
+function projektFortschrittPct(p) {
+  if (p.status === 'abgeschlossen') return 100
+  if (p.status === 'storniert') return null
+  const start = new Date(p.geplanter_beginn ? p.geplanter_beginn + 'T00:00:00' : p.created_at).getTime()
+  const end = p.rok ? new Date(p.rok + 'T23:59:59').getTime() : null
+  if (!end || end <= start) return null
+  return Math.min(Math.max(Math.round(((Date.now() - start) / (end - start)) * 100), 0), 100)
+}
+
+function FortschrittBar({ pct, color }) {
+  return (
+    <div className="h-1.5 rounded-full bg-bg-3 overflow-hidden w-full">
+      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+    </div>
+  )
+}
+
+const fmtPctVal = (n) => (n === null || n === undefined || Number.isNaN(n))
+  ? '—' : `${n.toFixed(1).replace('.', ',')}%`
+
+const PAGE_SIZE = 8
+
 export default function AuftraegePage({ articles, setArticles }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [searchParams] = useSearchParams()
   const [projekte, setProjekte]   = useState([])
   const [users, setUsers]         = useState([])
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
-  const [filterStatus, setFilterStatus] = useState('Alle')
+  const [tab, setTab]             = useState('alle')
+  const [filterLeiter, setFilterLeiter]     = useState('Alle')
+  const [filterZeitraum, setFilterZeitraum] = useState('alle')
+  const [view, setView]           = useState('tabelle')
+  const [page, setPage]           = useState(0)
+  const [selId, setSelId]         = useState(null)
+  const [confirmComplete, setConfirmComplete] = useState(false)
+  const [completing, setCompleting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing]     = useState(null)
   const [activeId, setActiveId]   = useState(null)
@@ -988,6 +1058,34 @@ export default function AuftraegePage({ articles, setArticles }) {
     if (urlProjekt) setActiveId(Number(urlProjekt))
   }, []) // eslint-disable-line
 
+  useEffect(() => { setPage(0) }, [search, tab, filterLeiter, filterZeitraum])
+  // A pending "abschließen?" confirmation must not carry over to a
+  // newly selected project.
+  useEffect(() => { setConfirmComplete(false) }, [selId])
+
+  // Real 6-month history for the stat-card sparklines, reconstructed
+  // from created_at / abgeschlossen_at — no snapshot table needed.
+  const sparkSeries = useMemo(() => {
+    const ends = []
+    const nowD = new Date()
+    for (let i = 5; i >= 0; i--) ends.push(new Date(nowD.getFullYear(), nowD.getMonth() - i + 1, 0, 23, 59, 59))
+    const rg = (p) => projektRealisierterGewinn(p, verbrauchMap, articles)
+    const open = (p, end) => new Date(p.created_at) <= end && p.status !== 'storniert' &&
+      (!p.abgeschlossen_at || new Date(p.abgeschlossen_at) > end)
+    const doneBy = (end) => projekte.filter(p => p.status === 'abgeschlossen' && p.abgeschlossen_at && new Date(p.abgeschlossen_at) <= end)
+    return {
+      aktive:     ends.map(end => projekte.filter(p => open(p, end)).length),
+      spaet:      ends.map(end => projekte.filter(p => open(p, end) && p.rok && new Date(p.rok + 'T23:59:59') < end).length),
+      erwartet:   ends.map(end => projekte.filter(p => open(p, end)).reduce((s, p) => s + projektGewinn(p), 0)),
+      realisiert: ends.map(end => doneBy(end).reduce((s, p) => s + rg(p), 0)),
+      marge:      ends.map(end => {
+        const done = doneBy(end).filter(p => Number(p.verkaufspreis) > 0)
+        if (done.length === 0) return 0
+        return done.reduce((s, p) => s + (rg(p) / Number(p.verkaufspreis)) * 100, 0) / done.length
+      }),
+    }
+  }, [projekte, verbrauchMap, articles])
+
   const openNew  = () => { setEditing(null); setShowModal(true) }
   const openEdit = (p) => { setEditing(p); setShowModal(true) }
   const onSaved  = async () => { setShowModal(false); await load() }
@@ -1008,23 +1106,136 @@ export default function AuftraegePage({ articles, setArticles }) {
     )
   }
 
+  /* ── filters ── */
+  const leiterList = [...new Set(projekte.map(p => p.verantwortlich_name).filter(Boolean))]
+  const inZeitraum = (p) => {
+    if (filterZeitraum === 'alle') return true
+    if (!p.rok) return false
+    const d = new Date(p.rok + 'T00:00:00'), nowD = new Date()
+    if (d.getFullYear() !== nowD.getFullYear()) return false
+    if (filterZeitraum === 'monat')   return d.getMonth() === nowD.getMonth()
+    if (filterZeitraum === 'quartal') return Math.floor(d.getMonth() / 3) === Math.floor(nowD.getMonth() / 3)
+    return true // jahr
+  }
   const filtered = projekte.filter(p => {
     const q = search.toLowerCase()
-    return (
-      (!q || p.name.toLowerCase().includes(q) || p.kunde.toLowerCase().includes(q)) &&
-      (filterStatus === 'Alle' || p.status === filterStatus)
-    )
+    return (!q || p.name.toLowerCase().includes(q) || p.kunde.toLowerCase().includes(q)) &&
+      (tab === 'alle' || p.status === tab) &&
+      (filterLeiter === 'Alle' || p.verantwortlich_name === filterLeiter) &&
+      inZeitraum(p)
   })
 
+  const pageCount = Math.max(Math.ceil(filtered.length / PAGE_SIZE), 1)
+  const safePage  = Math.min(page, pageCount - 1)
+  const paged     = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+  const sel       = filtered.find(p => p.id === selId) ?? paged[0] ?? null
+
+  /* ── headline stats ── */
+  const realGewinn = (p) => projektRealisierterGewinn(p, verbrauchMap, articles)
   const aktiveCount = projekte.filter(p => p.status === 'aktiv').length
   const kasneCount  = projekte.filter(isSpaet).length
-  const realGewinn = (p) => projektRealisierterGewinn(p, verbrauchMap, articles)
-
-  const erwarteterGewinn = projekte.filter(p => isOffen(p.status)).reduce((s, p) => s + projektGewinn(p), 0)
+  const erwarteterGewinn   = projekte.filter(p => isOffen(p.status)).reduce((s, p) => s + projektGewinn(p), 0)
   const realisierterGewinn = projekte.filter(p => p.status === 'abgeschlossen').reduce((s, p) => s + realGewinn(p), 0)
+  const marge = durchschnittGewinnmarge(projekte, verbrauchMap, articles)
+
+  const vsLabel = t('auf_vs_last_month')
+  const GREEN = 'rgb(var(--color-green))', RED = 'rgb(var(--color-red))'
+  const countSub = (arr, invert = false) => {
+    const d = arr[5] - arr[4]
+    const good = invert ? d < 0 : d > 0
+    return { sub: `${d > 0 ? '+' : d < 0 ? '' : '±'}${d} ${vsLabel}`, subColor: d === 0 ? undefined : good ? GREEN : RED }
+  }
+  const pctSub = (arr) => {
+    const prev = arr[4], cur = arr[5]
+    if (!prev) return { sub: undefined }
+    const d = ((cur - prev) / Math.abs(prev)) * 100
+    return { sub: `${d >= 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')}% ${vsLabel}`, subColor: d >= 0 ? GREEN : RED }
+  }
+  const pointSub = (arr) => {
+    const d = arr[5] - arr[4]
+    return { sub: `${d >= 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')}% ${vsLabel}`, subColor: d >= 0 ? GREEN : RED }
+  }
+
+  /* ── quick stats (footer) ── */
+  const statusCount = (s) => projekte.filter(p => p.status === s).length
+  const laufzeiten = projekte.map(projektLaufzeitTage).filter(v => v !== null)
+  const avgDauer = laufzeiten.length ? Math.round(laufzeiten.reduce((s, v) => s + v, 0) / laufzeiten.length) : null
+  const volumen = projekte.reduce((s, p) => s + Number(p.verkaufspreis ?? 0), 0)
+
+  /* ── right panel derived ── */
+  const tageBis = sel?.rok
+    ? Math.ceil((new Date(sel.rok + 'T00:00:00') - new Date(new Date().toDateString())) / 86400000)
+    : null
+  const aufwandGeplant = sel && sel.geplante_arbeiter_anzahl && sel.geplante_wochen
+    ? Math.round(sel.geplante_arbeiter_anzahl * Number(sel.arbeitsstunden_pro_woche ?? 40) * Number(sel.geplante_wochen))
+    : null
+  const aufwandReal = sel ? Math.round(projektArbeitsstunden(sel)) : 0
+  const selPct = sel ? projektFortschrittPct(sel) : null
+  const selMarge = sel && Number(sel.verkaufspreis) > 0 ? (projektGewinn(sel) / Number(sel.verkaufspreis)) * 100 : null
+
+  // Same side effects as ProjektDetail's changeStatus: stop the running
+  // clock, then stamp status + abgeschlossen_at.
+  const completeProjekt = async () => {
+    if (!sel) return
+    setCompleting(true)
+    await supabase.from('projekt_zeiterfassung')
+      .update({ ended_at: new Date().toISOString() })
+      .eq('projekt_id', sel.id).is('ended_at', null)
+    await supabase.from('projekte')
+      .update({ status: 'abgeschlossen', abgeschlossen_at: new Date().toISOString() })
+      .eq('id', sel.id)
+    setCompleting(false); setConfirmComplete(false)
+    await load()
+  }
+
+  const TABS = ['alle', 'geplant', 'aktiv', 'pausiert', 'abgeschlossen', 'storniert']
+  const from = filtered.length === 0 ? 0 : safePage * PAGE_SIZE + 1
+  const to   = Math.min((safePage + 1) * PAGE_SIZE, filtered.length)
+
+  const InfoRow = ({ label, children }) => (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted">{label}</span>
+      <span className="font-medium text-right">{children}</span>
+    </div>
+  )
+
+  const cardGrid = (extraClass = '') => (
+    <div className={`grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 p-3 ${extraClass}`}>
+      {paged.map(p => (
+        <Card key={p.id} className="p-4 cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-border-strong transition-all duration-200"
+              onClick={() => { setSelId(p.id); setActiveId(p.id) }}>
+          <div className="flex items-start justify-between mb-2 gap-2">
+            <div className="min-w-0">
+              <h3 className="font-semibold truncate">{p.name}</h3>
+              <p className="text-xs text-muted truncate">{p.kunde || '—'}</p>
+              {p.dokument_nr && <p className="text-[10px] text-muted font-mono truncate">{p.dokument_nr}</p>}
+            </div>
+            <StatusBadge status={p.status} />
+          </div>
+          <div className="flex items-center justify-between text-xs text-secondary mb-3">
+            <span>{p.rok ? fmtDt(p.rok) : t('auf_no_deadline')}</span>
+            {isSpaet(p) && <span className="text-red font-medium">{t('ad_late')}</span>}
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-secondary text-xs">{p.status === 'abgeschlossen' ? t('auf_profit_realized') : t('auf_profit_planned')}</span>
+            <span className={`font-mono font-semibold ${
+              (p.status === 'abgeschlossen' ? realGewinn(p) : projektGewinn(p)) >= 0 ? 'text-green' : 'text-red'
+            }`}>
+              {fmt(p.status === 'abgeschlossen' ? realGewinn(p) : projektGewinn(p))}
+            </span>
+          </div>
+          <button onClick={e => { e.stopPropagation(); openEdit(p) }}
+                  className="w-full mt-3 flex items-center justify-center gap-1.5 bg-bg-2 border border-border rounded-lg py-1.5 text-xs text-secondary hover:bg-bg-3 transition-colors">
+            <Icon name="edit" size={12} color="#9aa3ad" /> {t('common_edit')}
+          </button>
+        </Card>
+      ))}
+    </div>
+  )
 
   return (
     <div className="p-3 sm:p-6 lg:p-8">
+      {/* ── header ── */}
       <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('auf_title')}</h1>
@@ -1037,80 +1248,323 @@ export default function AuftraegePage({ articles, setArticles }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-5">
-        <Card className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-          <div className="text-xs text-muted mb-1">{t('ad_active_projects')}</div>
-          <div className="text-lg sm:text-xl font-bold font-mono"><CountUp value={aktiveCount} /></div>
-        </Card>
-        <Card className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-          <div className="text-xs text-muted mb-1">{t('ad_late')}</div>
-          <div className={`text-lg sm:text-xl font-bold font-mono ${kasneCount > 0 ? 'text-red' : ''}`}><CountUp value={kasneCount} /></div>
-        </Card>
-        <Card className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-          <div className="text-xs text-muted mb-1">{t('ad_expected_profit')}</div>
-          <div className="text-lg sm:text-xl font-bold font-mono"><CountUp value={erwarteterGewinn} format={fmt} /></div>
-        </Card>
-        <Card className="p-3 sm:p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-          <div className="text-xs text-muted mb-1">{t('ad_realized_profit')}</div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-green"><CountUp value={realisierterGewinn} format={fmt} /></div>
-        </Card>
+      {/* ── stat cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3 mb-4">
+        <AufStatMini label={t('ad_active_projects')} value={aktiveCount} icon="box" color="#4a90d9"
+                     spark={sparkSeries.aktive} {...countSub(sparkSeries.aktive)} />
+        <AufStatMini label={t('ad_late')} value={kasneCount} icon="alarm" color="#e0524a"
+                     valueColor={kasneCount > 0 ? 'text-red' : ''}
+                     spark={sparkSeries.spaet} {...countSub(sparkSeries.spaet, true)} />
+        <AufStatMini label={t('ad_expected_profit')} value={fmt(erwarteterGewinn)} icon="chart" color="#4caf6e"
+                     spark={sparkSeries.erwartet} {...pctSub(sparkSeries.erwartet)} />
+        <AufStatMini label={t('ad_realized_profit')} value={fmt(realisierterGewinn)} icon="check" color="#4caf6e"
+                     spark={sparkSeries.realisiert} {...pctSub(sparkSeries.realisiert)} />
+        <AufStatMini label={t('auf_stat_marge')} value={fmtPctVal(marge)} icon="chart" color="#e8821c"
+                     spark={sparkSeries.marge} {...pointSub(sparkSeries.marge)} />
       </div>
 
-      <Card className="p-3 flex flex-wrap gap-2 items-center mb-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-        <div className="relative flex-1 min-w-[160px]">
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-            <Icon name="search" size={13} color="#6b7480" />
-          </div>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('auf_search_ph')}
-                 className="w-full bg-bg-2 border border-border rounded-xl pl-8 pr-3 py-2 text-sm outline-none focus:border-amber" />
-        </div>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
-          <option value="Alle">{t('auf_all_status')}</option>
-          {Object.entries(STATUS_META).map(([k]) => <option key={k} value={k}>{t('status_' + k)}</option>)}
-        </select>
-      </Card>
+      <div className="flex flex-col xl:flex-row gap-4 items-start">
+        {/* ══ MAIN COLUMN ══ */}
+        <div className="flex-1 min-w-0 w-full">
+          {/* filter bar */}
+          <Card className="p-3 flex flex-wrap gap-2 items-center mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <div className="relative flex-1 min-w-[160px]">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                <Icon name="search" size={13} color="#6b7480" />
+              </div>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('auf_search_ph')}
+                     className="w-full bg-bg-2 border border-border rounded-xl pl-8 pr-3 py-2 text-sm outline-none focus:border-amber" />
+            </div>
+            <select value={tab} onChange={e => setTab(e.target.value)}
+                    className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+              <option value="alle">{t('auf_all_status')}</option>
+              {Object.keys(STATUS_META).map(k => <option key={k} value={k}>{t('status_' + k)}</option>)}
+            </select>
+            <select value={filterLeiter} onChange={e => setFilterLeiter(e.target.value)}
+                    className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+              <option value="Alle">{t('auf_all_leiter')}</option>
+              {leiterList.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select value={filterZeitraum} onChange={e => setFilterZeitraum(e.target.value)}
+                    className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+              <option value="alle">{t('auf_zeitraum_alle')}</option>
+              <option value="monat">{t('auf_zeitraum_monat')}</option>
+              <option value="quartal">{t('auf_zeitraum_quartal')}</option>
+              <option value="jahr">{t('auf_zeitraum_jahr')}</option>
+            </select>
+            <div className="hidden lg:flex items-center gap-1 bg-bg-2 border border-border rounded-xl p-1">
+              <button onClick={() => setView('karten')} title="Karten"
+                      className={`p-1.5 rounded-lg transition-colors ${view === 'karten' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+                <Icon name="grid" size={14} color="currentColor" />
+              </button>
+              <button onClick={() => setView('tabelle')} title="Tabelle"
+                      className={`p-1.5 rounded-lg transition-colors ${view === 'tabelle' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+                <Icon name="list" size={14} color="currentColor" />
+              </button>
+            </div>
+          </Card>
 
-      {filtered.length === 0 ? (
-        <Card className="p-10 text-center">
-          <Icon name="clipboard" size={28} color="#6b7480" />
-          <p className="text-secondary text-sm mt-3">{t('auf_no_projects')}</p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map(p => {
-            return (
-              <Card key={p.id} className="p-4 cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-border-strong sm:hover:-translate-y-0.5 sm:hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200"
-                    onClick={() => setActiveId(p.id)}>
-                <div className="flex items-start justify-between mb-2 gap-2">
-                  <div className="min-w-0">
-                    <h3 className="font-semibold truncate">{p.name}</h3>
-                    <p className="text-xs text-muted truncate">{p.kunde || '—'}</p>
-                    {p.dokument_nr && <p className="text-[10px] text-muted font-mono truncate">{p.dokument_nr}</p>}
-                  </div>
-                  <StatusBadge status={p.status} />
-                </div>
-                <div className="flex items-center justify-between text-xs text-secondary mb-3">
-                  <span>{p.rok ? fmtDt(p.rok) : t('auf_no_deadline')}</span>
-                  {isSpaet(p) && <span className="text-red font-medium">{t('ad_late')}</span>}
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-secondary text-xs">{p.status === 'abgeschlossen' ? t('auf_profit_realized') : t('auf_profit_planned')}</span>
-                  <span className={`font-mono font-semibold ${
-                    (p.status === 'abgeschlossen' ? realGewinn(p) : projektGewinn(p)) >= 0 ? 'text-green' : 'text-red'
-                  }`}>
-                    {fmt(p.status === 'abgeschlossen' ? realGewinn(p) : projektGewinn(p))}
-                  </span>
-                </div>
-                <button onClick={e => { e.stopPropagation(); openEdit(p) }}
-                        className="w-full mt-3 flex items-center justify-center gap-1.5 bg-bg-2 border border-border rounded-lg py-1.5 text-xs text-secondary hover:bg-bg-3 transition-colors">
-                  <Icon name="edit" size={12} color="#9aa3ad" /> {t('common_edit')}
+          {/* projects table */}
+          <Card className="overflow-hidden mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <div className="flex gap-1 px-3 border-b border-border overflow-x-auto">
+              {TABS.map(k => (
+                <button key={k} onClick={() => setTab(k)}
+                        className={`px-3 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
+                          tab === k ? 'border-amber text-amber' : 'border-transparent text-secondary hover:text-primary'
+                        }`}>
+                  {k === 'alle' ? t('auf_tab_alle') : t('status_' + k)}
                 </button>
-              </Card>
-            )
-          })}
+              ))}
+            </div>
+
+            {filtered.length === 0 ? (
+              <div className="p-10 text-center">
+                <Icon name="clipboard" size={28} color="#6b7480" />
+                <p className="text-secondary text-sm mt-3">{t('auf_no_projects')}</p>
+              </div>
+            ) : (
+              <>
+                {view === 'tabelle' ? (
+                  <>
+                    {/* card fallback on small screens */}
+                    <div className="lg:hidden">{cardGrid()}</div>
+                    <div className="hidden lg:block overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
+                            <th className="px-4 py-2.5 font-medium">{t('auf_col_projekt')}</th>
+                            <th className="px-4 py-2.5 font-medium">{t('auf_col_kunde')}</th>
+                            <th className="px-4 py-2.5 font-medium">{t('auf_col_fortschritt')}</th>
+                            <th className="px-4 py-2.5 font-medium">{t('auf_col_status')}</th>
+                            <th className="px-4 py-2.5 font-medium">{t('auf_col_gewinn_geplant')}</th>
+                            <th className="px-4 py-2.5 font-medium">{t('auf_col_gewinn_real')}</th>
+                            <th className="px-4 py-2.5 font-medium text-right">{t('auf_col_aktionen')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paged.map(p => {
+                            const m = STATUS_META[p.status] ?? STATUS_META.geplant
+                            const pct = projektFortschrittPct(p)
+                            const gp = projektGewinn(p)
+                            const gr = p.status === 'abgeschlossen' ? realGewinn(p) : null
+                            const isSel = sel?.id === p.id
+                            return (
+                              <tr key={p.id} onClick={() => setSelId(p.id)}
+                                  className={`border-b border-border last:border-0 cursor-pointer transition-colors ${isSel ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
+                                <td className="px-4 py-3" style={{ borderLeft: `3px solid ${m.color}` }}>
+                                  <div className="font-medium">{p.name}</div>
+                                  <div className="text-[11px] text-muted font-mono mt-0.5">
+                                    {p.dokument_nr ? `${p.dokument_nr} · ` : ''}{p.rok ? fmtDt(p.rok) : t('auf_no_deadline')}
+                                    {isSpaet(p) && <span className="text-red font-semibold"> · {t('ad_late')}</span>}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-secondary">{p.kunde || '—'}</td>
+                                <td className="px-4 py-3 w-44">
+                                  {pct === null ? <span className="text-muted text-xs">—</span> : (
+                                    <div>
+                                      <div className="text-xs font-mono font-semibold mb-1">{pct}%</div>
+                                      <FortschrittBar pct={pct} color={p.status === 'abgeschlossen' ? '#4caf6e' : '#4a90d9'} />
+                                      <div className="text-[10px] text-muted mt-1">
+                                        {p.status === 'abgeschlossen' ? t('status_abgeschlossen') : t('auf_in_arbeit')}
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
+                                <td className={`px-4 py-3 font-mono text-xs whitespace-nowrap ${p.status === 'abgeschlossen' ? 'text-muted' : gp >= 0 ? 'text-green' : 'text-red'}`}>
+                                  {p.status === 'abgeschlossen' ? '—' : fmt(gp)}
+                                </td>
+                                <td className={`px-4 py-3 font-mono text-xs whitespace-nowrap ${gr === null ? 'text-muted' : gr >= 0 ? 'text-green' : 'text-red'}`}>
+                                  {gr === null ? '—' : fmt(gr)}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button onClick={e => { e.stopPropagation(); setSelId(p.id); setActiveId(p.id) }}
+                                            title={t('auf_act_open')} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
+                                      <Icon name="eye" size={14} color="#9aa3ad" />
+                                    </button>
+                                    <button onClick={e => { e.stopPropagation(); openEdit(p) }}
+                                            title={t('common_edit')} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
+                                      <Icon name="edit" size={14} color="#9aa3ad" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : cardGrid()}
+
+                {/* pagination */}
+                <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted flex-wrap gap-2">
+                  <span>
+                    {lang === 'en'
+                      ? `Showing ${from} to ${to} of ${filtered.length} projects`
+                      : `Zeige ${from} bis ${to} von ${filtered.length} Projekten`}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}
+                            className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-bg-2 transition-colors">
+                      <Icon name="chevronLeft" size={12} color="#9aa3ad" />
+                    </button>
+                    {Array.from({ length: pageCount }).map((_, i) => (
+                      <button key={i} onClick={() => setPage(i)}
+                              className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                                i === safePage ? 'bg-amber text-bg-0' : 'border border-border text-secondary hover:bg-bg-2'
+                              }`}>
+                        {i + 1}
+                      </button>
+                    ))}
+                    <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}
+                            className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-bg-2 transition-colors">
+                      <Icon name="chevronRight" size={12} color="#9aa3ad" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </Card>
         </div>
-      )}
+
+        {/* ══ RIGHT PANEL ══ */}
+        <div className="w-full xl:w-80 shrink-0 space-y-4">
+          {sel ? (
+            <>
+              {/* Projektübersicht */}
+              <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <h3 className="font-semibold text-sm mb-3">{t('auf_uebersicht')}</h3>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-semibold text-sm">{sel.name}</div>
+                  <StatusBadge status={sel.status} />
+                </div>
+                {sel.dokument_nr && <div className="text-[11px] text-muted font-mono mt-0.5 mb-3">{sel.dokument_nr}</div>}
+                <div className="space-y-2.5 text-xs mt-3">
+                  <InfoRow label={t('auf_col_kunde')}>{sel.kunde || '—'}</InfoRow>
+                  <InfoRow label={t('auf_ov_leiter')}>
+                    {sel.verantwortlich_name
+                      ? <span className="inline-flex items-center gap-1.5"><StatusDot color="#4caf6e" size={6} />{sel.verantwortlich_name}</span>
+                      : '—'}
+                  </InfoRow>
+                  <InfoRow label={t('auf_ov_start')}>{fmtDt(sel.geplanter_beginn ?? sel.created_at)}</InfoRow>
+                  <InfoRow label={t('auf_ov_ende')}>
+                    {sel.rok ? (
+                      <>
+                        {fmtDt(sel.rok)}{' '}
+                        {tageBis !== null && isOffen(sel.status) && (
+                          <span className={tageBis < 0 ? 'text-red font-semibold' : 'text-amber font-semibold'}>
+                            {tageBis < 0
+                              ? (lang === 'en' ? `(${-tageBis} days overdue)` : `(${-tageBis} Tage überfällig)`)
+                              : (lang === 'en' ? `(in ${tageBis} days)` : `(in ${tageBis} Tagen)`)}
+                          </span>
+                        )}
+                      </>
+                    ) : '—'}
+                  </InfoRow>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-muted">{t('auf_col_fortschritt')}</span>
+                      <span className="font-mono font-semibold">{selPct === null ? '—' : `${selPct}%`}</span>
+                    </div>
+                    {selPct !== null && <FortschrittBar pct={selPct} color={sel.status === 'abgeschlossen' ? '#4caf6e' : '#4a90d9'} />}
+                  </div>
+                  <InfoRow label={t('auf_ov_aufwand_geplant')}>{aufwandGeplant !== null ? `${aufwandGeplant} h` : '—'}</InfoRow>
+                  <InfoRow label={t('auf_ov_aufwand_real')}>{aufwandReal} h</InfoRow>
+                </div>
+              </Card>
+
+              {/* Finanzübersicht */}
+              <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <h3 className="font-semibold text-sm mb-3">{t('auf_finanz')}</h3>
+                <div className="space-y-2.5 text-xs">
+                  <InfoRow label={t('auf_fin_angebot')}>{fmt(Number(sel.verkaufspreis ?? 0))}</InfoRow>
+                  <InfoRow label={t('auf_fin_material')}>{fmt(materialGeplantWert(sel))}</InfoRow>
+                  <InfoRow label={t('auf_fin_arbeit')}>{fmt(Number(sel.geplante_arbeitskosten ?? 0))}</InfoRow>
+                  <div className="border-t border-border pt-2.5 space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted">{t('auf_col_gewinn_geplant')}</span>
+                      <span className={`font-mono font-semibold ${projektGewinn(sel) >= 0 ? 'text-green' : 'text-red'}`}>
+                        {fmt(projektGewinn(sel))}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted">{t('auf_fin_marge')}</span>
+                      <span className={`font-mono font-semibold ${selMarge !== null && selMarge < 0 ? 'text-red' : selMarge !== null ? 'text-green' : ''}`}>
+                        {fmtPctVal(selMarge)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Projektaktionen */}
+              <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <h3 className="font-semibold text-sm mb-2">{t('auf_aktionen_title')}</h3>
+                <div className="space-y-1">
+                  {[
+                    { icon: 'eye',   label: t('auf_act_open') },
+                    { icon: 'chart', label: t('auf_act_kalk') },
+                    { icon: 'clock', label: t('auf_act_zeit') },
+                  ].map(a => (
+                    <button key={a.label} onClick={() => setActiveId(sel.id)}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs text-secondary hover:bg-bg-2 transition-colors text-left">
+                      <Icon name={a.icon} size={14} color="#9aa3ad" /> {a.label}
+                    </button>
+                  ))}
+                  {isOffen(sel.status) && (
+                    confirmComplete ? (
+                      <div className="flex items-center gap-2 px-2.5 py-2">
+                        <span className="text-xs text-red flex-1">{t('auf_act_confirm')}</span>
+                        <button onClick={completeProjekt} disabled={completing}
+                                className="text-xs font-semibold bg-red text-white px-2.5 py-1.5 rounded-lg disabled:opacity-60">
+                          {completing ? '…' : 'OK'}
+                        </button>
+                        <button onClick={() => setConfirmComplete(false)}
+                                className="text-xs text-muted px-2 py-1.5 rounded-lg hover:bg-bg-2">
+                          {t('common_cancel')}
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmComplete(true)}
+                              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs text-red hover:bg-red-dim transition-colors text-left">
+                        <Icon name="check" size={14} color="rgb(var(--color-red))" /> {t('auf_act_complete')}
+                      </button>
+                    )
+                  )}
+                </div>
+              </Card>
+            </>
+          ) : (
+            <Card className="p-6 text-center">
+              <Icon name="clipboard" size={24} color="#6b7480" />
+              <p className="text-muted text-xs mt-2">{t('auf_keine_auswahl')}</p>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* ── Schnellstatistik ── */}
+      <Card className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+        <h3 className="font-semibold text-sm mb-3">{t('auf_schnellstat')}</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-x-4 gap-y-3">
+          {[
+            { label: t('auf_qs_gesamt'),        value: projekte.length },
+            { label: t('ad_active_projects'),   value: statusCount('aktiv') },
+            { label: t('auf_qs_pausiert'),      value: statusCount('pausiert') },
+            { label: t('auf_qs_abgeschlossen'), value: statusCount('abgeschlossen') },
+            { label: t('auf_qs_storniert'),     value: statusCount('storniert') },
+            { label: t('auf_qs_dauer'),         value: avgDauer !== null ? `${avgDauer} ${t('auf_tage')}` : '—' },
+            { label: t('auf_qs_volumen'),       value: fmt(volumen) },
+          ].map(s => (
+            <div key={s.label}>
+              <div className="text-[11px] text-muted mb-1">{s.label}</div>
+              <div className="font-mono font-bold text-sm">{s.value}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {showModal && (
         <ProjektFormModal projekt={editing} users={users} onClose={() => setShowModal(false)} onSaved={onSaved} />

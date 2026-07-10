@@ -17,6 +17,7 @@ const fmt    = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', curren
 const fmtDay = (d) => new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(d))
 const fmtTime = (d) => new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date(d))
 const fmtFull = (d, lang) => new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(d))
+const fmtClock = (d) => new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(d))
 
 // A movement tied to a real project shows that project's PROJ-2026-xxxxxx
 // number — free-typed project text (no linked project row) stays as-is.
@@ -292,6 +293,12 @@ export default function HomePage({ articles = [], moves = [] }) {
   const [allBestellungen, setAllBestellungen] = useState([])
   const [allProjekte, setAllProjekte]         = useState([])
   const [heuteTermine, setHeuteTermine]       = useState([])
+  // Live clock for the hero (next to the date chip).
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
   useEffect(() => {
     if (!isManager) return
     const heute = dateKey(new Date())
@@ -576,12 +583,22 @@ export default function HomePage({ articles = [], moves = [] }) {
                 {isManager ? t('home_owner_subtitle') : t('home_worker_subtitle')}
               </p>
             </div>
-            <div className="hidden md:flex items-center gap-2.5 px-4 py-2.5 rounded-xl shrink-0"
-                 style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.12)' }}>
-              <Icon name="clipboard" size={17} color="rgba(255,255,255,0.75)" />
-              <div>
-                <div className="text-[11px] leading-tight" style={{ color: 'rgba(255,255,255,0.6)' }}>{t('home_today')}</div>
-                <div className="text-sm font-semibold font-mono text-white">{fmtFull(new Date(), lang)}</div>
+            <div className="hidden md:flex items-center gap-2.5 shrink-0">
+              <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl"
+                   style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                <Icon name="calendar" size={17} color="rgba(255,255,255,0.75)" />
+                <div>
+                  <div className="text-[11px] leading-tight" style={{ color: 'rgba(255,255,255,0.6)' }}>{t('home_today')}</div>
+                  <div className="text-sm font-semibold font-mono text-white">{fmtFull(now, lang)}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl"
+                   style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                <Icon name="clock" size={17} color="rgba(255,255,255,0.75)" />
+                <div>
+                  <div className="text-[11px] leading-tight" style={{ color: 'rgba(255,255,255,0.6)' }}>{t('home_time')}</div>
+                  <div className="text-sm font-semibold font-mono text-white">{fmtClock(now)}</div>
+                </div>
               </div>
             </div>
           </div>

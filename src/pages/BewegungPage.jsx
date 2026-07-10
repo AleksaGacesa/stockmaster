@@ -7,6 +7,7 @@ import Card from '../components/Card'
 import Icon from '../components/Icon'
 import QrScannerCard from '../components/QrScannerCard'
 import StockBadge from '../components/StockBadge'
+import ArtikelBild from '../components/ArtikelBild'
 
 const fmtDt = (d) => new Intl.DateTimeFormat('de-DE', {
   day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -241,8 +242,8 @@ function SearchView({
           results.map(a => (
             <button key={a.id} onClick={() => pickArticle(a)}
                     className="text-left px-3 py-2.5 rounded-xl bg-bg-2 border border-border hover:border-amber hover:bg-bg-3 transition-colors flex items-center gap-3">
-              <div className="w-11 h-11 rounded-lg bg-bg-1 overflow-hidden shrink-0">
-                <img src={a.bild} className="w-full h-full object-cover" onError={e => { e.target.style.display = 'none' }} />
+              <div className="w-11 h-11 rounded-lg overflow-hidden shrink-0">
+                <ArtikelBild artikel={a} iconSize={18} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{a.name}</div>
@@ -276,9 +277,8 @@ function FormView({ selected, typ, setTyp, menge, setMenge, projekt, setProjekt,
     <div className="w-full max-w-2xl space-y-4">
       {/* Selected article */}
       <Card className="p-3 flex items-center gap-3">
-        <div className="w-12 h-12 rounded-xl bg-bg-2 overflow-hidden shrink-0">
-          <img src={selected.bild} className="w-full h-full object-cover"
-               onError={e => e.target.style.display = 'none'} />
+        <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0">
+          <ArtikelBild artikel={selected} iconSize={20} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-mono text-xs text-amber">{selected.nummer}</div>

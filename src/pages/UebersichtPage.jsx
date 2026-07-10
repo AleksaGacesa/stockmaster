@@ -6,6 +6,7 @@ import { useLanguage } from '../hooks/useLanguage'
 import Card from '../components/Card'
 import Icon from '../components/Icon'
 import StockBadge from '../components/StockBadge'
+import ArtikelBild from '../components/ArtikelBild'
 import { printQrLabels } from '../lib/printQrLabels'
 
 const fmt = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n)
@@ -35,8 +36,6 @@ function ArticleFormModal({ article, firma, onClose, onSaved }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showQr, setShowQr]           = useState(false)
   const [qrUrl, setQrUrl]             = useState(null)
-  const [uploading, setUploading]     = useState(false)
-  const [uploadError, setUploadError] = useState(null)
   const [pinStep, setPinStep]         = useState(false)
   const [pinInput, setPinInput]       = useState('')
   const [pinError, setPinError]       = useState(null)
@@ -44,17 +43,6 @@ function ArticleFormModal({ article, firma, onClose, onSaved }) {
   const up = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const mengeChanged = !isNew && Number(form.menge) !== Number(article.menge)
-
-  const uploadImage = async (file) => {
-    setUploading(true); setUploadError(null)
-    const ext = file.name.split('.').pop()
-    const path = `${Date.now()}-${(form.nummer || 'artikel').replace(/[^a-zA-Z0-9-]/g, '_')}.${ext}`
-    const { error: upErr } = await supabase.storage.from('artikelbilder').upload(path, file, { upsert: true, cacheControl: '3600' })
-    setUploading(false)
-    if (upErr) { setUploadError(upErr.message); return }
-    const { data } = supabase.storage.from('artikelbilder').getPublicUrl(path)
-    up('bild', `${data.publicUrl}?v=${Date.now()}`)
-  }
 
   // A quantity change on an existing article is a manual stock
   // override — same weight as a Warenausgang/-eingang booking, so it
@@ -169,26 +157,21 @@ function ArticleFormModal({ article, firma, onClose, onSaved }) {
           <div>
             <label className="block text-xs text-secondary mb-1.5">{t('ueb_field_image')}</label>
             <div className="flex items-center gap-3">
-              {form.bild ? (
-                <img src={form.bild} alt="" className="w-16 h-16 rounded-xl object-cover bg-bg-2 border border-border shrink-0" />
-              ) : (
-                <div className="w-16 h-16 rounded-xl bg-bg-2 border border-border flex items-center justify-center shrink-0">
-                  <Icon name="camera" size={20} color="#6b7480" />
-                </div>
-              )}
+              <div className="w-16 h-16 rounded-xl overflow-hidden border border-border shrink-0">
+                <ArtikelBild artikel={form} iconSize={24} />
+              </div>
               <div className="flex-1">
-                <label className="inline-flex items-center gap-2 text-xs bg-bg-2 border border-border px-3 py-2 rounded-lg text-secondary cursor-pointer hover:bg-bg-3 transition-colors">
-                  <Icon name="upload" size={13} color="currentColor" />
-                  {uploading ? t('set_uploading') : t('ueb_upload_image')}
-                  <input type="file" accept="image/*" className="hidden" disabled={uploading}
-                         onChange={e => e.target.files[0] && uploadImage(e.target.files[0])} />
-                </label>
-                {form.bild && (
-                  <button onClick={() => up('bild', '')} className="ml-2 text-xs text-muted hover:text-red">
-                    {t('set_remove')}
-                  </button>
-                )}
-                {uploadError && <p className="text-red text-xs mt-1">{uploadError}</p>}
+                <input type="url" value={form.bild} placeholder={t('ueb_image_url_ph')}
+                       onChange={e => up('bild', e.target.value)}
+                       className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber transition-colors" />
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-[11px] text-muted flex-1">{t('ueb_image_hint')}</p>
+                  {form.bild && (
+                    <button onClick={() => up('bild', '')} className="text-xs text-muted hover:text-red shrink-0">
+                      {t('set_remove')}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -681,9 +664,8 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                     <SelectCheckbox checked={selected.has(a.id)} onClick={() => toggleSelected(a.id)} />
                   </div>
                 )}
-                <div className="aspect-video bg-bg-2 overflow-hidden">
-                  <img src={a.bild} alt={a.name} className="w-full h-full object-cover"
-                       onError={e => { e.target.style.display = 'none' }} />
+                <div className="aspect-video overflow-hidden">
+                  <ArtikelBild artikel={a} iconSize={34} />
                 </div>
                 <div className="p-3">
                   <div className="flex items-center justify-between mb-1.5">
