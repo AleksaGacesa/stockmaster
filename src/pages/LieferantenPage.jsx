@@ -325,8 +325,11 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
     const calc = () => {
       const el = tableTopRef.current
       if (!el || el.offsetParent === null) return
-      const avail = window.innerHeight - el.getBoundingClientRect().top - 46 - 36 - 40
-      setPageSize(Math.min(Math.max(Math.floor(avail / 57), 8), 30))
+      // Reserved: pagination bar (~46) + thead (~36) + card border and
+      // page bottom padding (~48). 62px per two-line row, measured
+      // conservatively so the page never gains a scrollbar.
+      const avail = window.innerHeight - el.getBoundingClientRect().top - 130
+      setPageSize(Math.min(Math.max(Math.floor(avail / 62), 8), 30))
     }
     calc()
     window.addEventListener('resize', calc)
@@ -529,9 +532,10 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
         </div>
       )}
 
-      {/* Columns stretch so the article card fills down to the bottom
-          of the viewport instead of stopping at its content height. */}
-      <div className="flex flex-col xl:flex-row gap-4 xl:min-h-[calc(100vh-380px)]">
+      {/* The article card's height follows the adaptive page size (as
+          many rows as fit to the viewport bottom) — no forced min-h,
+          which previously overshot and caused a page scrollbar. */}
+      <div className="flex flex-col xl:flex-row gap-4">
         {/* ══ MAIN: article table ══ */}
         <div ref={tableTopRef} className="flex-1 min-w-0 w-full flex flex-col">
           <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col">
