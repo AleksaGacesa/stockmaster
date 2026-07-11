@@ -27,7 +27,7 @@ const PATHS = {
   user:        <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0 M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>,
   menu:        <path d="M4 6h16M4 12h16M4 18h16"/>,
   grid:        <path d="M4 4h6v6h-6z M14 4h6v6h-6z M4 14h6v6h-6z M14 14h6v6h-6z"/>,
-  dots:        <path d="M12 5h.01 M12 12h.01 M12 19h.01"/>,
+  dots:        <><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></>,
   cart:        <path d="M4 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M15 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M17 17h-11v-14h-2 M6 5l14 1l-1 7h-13"/>,
   star:        <path d="M12 17.75l-6.172 3.245l1.179-6.873l-5-4.867l6.9-1l3.086-6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z"/>,
   list:        <path d="M9 6h11 M9 12h11 M9 18h11 M4 6h.01 M4 12h.01 M4 18h.01"/>,

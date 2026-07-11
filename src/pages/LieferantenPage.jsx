@@ -1475,23 +1475,54 @@ function BestellungDetail({ bestellung, onBack, onRefresh, setArticles, setMoves
 const LF_AV_COLORS = ['#e8821c', '#4a90d9', '#4caf6e', '#9b6bd9', '#d96b8f', '#3fb6c4']
 const lfAvColor = (name = '') => LF_AV_COLORS[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % LF_AV_COLORS.length]
 
+// The badge reflects the WAREHOUSE state of this supplier's articles
+// (worst one wins), plus "Verzögert" when a sent order is overdue.
 const LIEF_STATUS = {
-  aktiv:      { labelKey: 'lief_status_aktiv',      color: '#4caf6e' },
-  knapp:      { labelKey: 'lief_status_knapp',      color: '#e8821c' },
-  verzoegert: { labelKey: 'lief_status_verzoegert', color: '#e0524a' },
+  ausreichend: { labelKey: 'lief_status_ausreichend', color: '#4caf6e' },
+  knapp:       { labelKey: 'lief_status_knapp',       color: '#e8821c' },
+  niedrig:     { labelKey: 'lief_status_niedrig',     color: '#e0524a' },
+  verzoegert:  { labelKey: 'lief_status_verzoegert',  color: '#e0524a' },
 }
 // Country isn't a column — read it off the address; German suppliers
 // rarely write "Deutschland" out, so that is the fallback.
 const LF_LAENDER = ['Österreich', 'Schweiz', 'Niederlande', 'Frankreich', 'Polen', 'Deutschland']
 const lfLand = (l) => LF_LAENDER.find(x => (l.adresse ?? '').includes(x)) ?? 'Deutschland'
 
-function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, onEditLieferant, onNewBestellung }) {
+function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, onEditLieferant, onNewBestellung, onReload }) {
   const { t } = useLanguage()
   const [search, setSearch] = useState('')
   const [filterKat, setFilterKat]     = useState('alle')
   const [filterLand, setFilterLand]   = useState('alle')
   const [filterStatus, setFilterStatus] = useState('alle')
   const [view, setView] = useState('karten')
+  // Multi-select for bulk deletion (works in both views).
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected]     = useState(new Set())
+  const [confirmBulk, setConfirmBulk] = useState(false)
+  const [deleting, setDeleting]     = useState(false)
+  const [bulkMsg, setBulkMsg]       = useState(null)
+
+  const toggleSelected = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); setConfirmBulk(false) }
+
+  // Suppliers with orders are FK-protected — delete what we can and
+  // report how many were blocked instead of failing the whole batch.
+  const deleteSelected = async () => {
+    setDeleting(true)
+    let failed = 0
+    for (const id of selected) {
+      const { error } = await supabase.from('lieferanten').delete().eq('id', id)
+      if (error) failed++
+    }
+    setDeleting(false)
+    exitSelect()
+    setBulkMsg(failed > 0 ? `${failed} ${t('lief_delete_blocked_some')}` : null)
+    await onReload()
+  }
 
   /* ── per-supplier derived facts ── */
   const offeneCount = (l) => bestellungen.filter(b => b.lieferant_id === l.id && b.status !== 'eingetroffen').length
@@ -1501,7 +1532,13 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
     b.lieferant_id === l.id && (b.status === 'gesendet' || b.status === 'bestaetigt') &&
     b.gesendet_at && (Date.now() - new Date(b.gesendet_at)) > 7 * 86400000)
   const knappFor = (l) => lowStockForLieferant(articles, l)
-  const statusOf = (l) => istVerzoegert(l) ? 'verzoegert' : knappFor(l).length > 0 ? 'knapp' : 'aktiv'
+  const statusOf = (l) => {
+    if (istVerzoegert(l)) return 'verzoegert'
+    const eigene = articles.filter(a => a.lieferant_id === l.id)
+    if (eigene.some(a => a.menge < a.mindestbestand)) return 'niedrig'
+    if (eigene.some(a => a.menge < a.mindestbestand * 1.5)) return 'knapp'
+    return 'ausreichend'
+  }
 
   const katVonLief = useMemo(() => {
     const map = new Map()
@@ -1542,6 +1579,14 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
       <div className="text-[10px] text-muted mb-0.5">{label}</div>
       <div className="text-sm font-semibold font-mono">{value}</div>
     </div>
+  )
+
+  const checkBox = (checked) => (
+    <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+      checked ? 'bg-amber border-amber' : 'border-border-strong bg-bg-1'
+    }`}>
+      {checked && <Icon name="check" size={12} color="#181c20" />}
+    </span>
   )
 
   return (
@@ -1597,7 +1642,50 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
             <Icon name="list" size={14} color="currentColor" />
           </button>
         </div>
+        <button onClick={() => selectMode ? exitSelect() : setSelectMode(true)}
+                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl border transition-colors ${
+                  selectMode ? 'border-amber text-amber bg-amber-dim' : 'border-border text-secondary bg-bg-2 hover:bg-bg-3'
+                }`}>
+          <Icon name="check" size={13} color="currentColor" /> {t('lief_select')}
+        </button>
       </Card>
+
+      {/* bulk action bar */}
+      {selectMode && (
+        <div className="flex items-center gap-3 bg-amber-dim border border-amber/40 rounded-xl px-4 py-2.5 animate-fade-up flex-wrap">
+          <span className="text-sm font-semibold text-amber">{selected.size} {t('lief_selected')}</span>
+          <div className="flex items-center gap-2 ml-auto">
+            {confirmBulk ? (
+              <>
+                <span className="text-xs text-red">{t('lief_really_delete')}</span>
+                <button onClick={deleteSelected} disabled={deleting}
+                        className="bg-red text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60">
+                  {deleting ? '…' : t('common_yes')}
+                </button>
+                <button onClick={() => setConfirmBulk(false)}
+                        className="text-xs text-secondary border border-border px-3 py-1.5 rounded-lg bg-bg-1">
+                  {t('common_no')}
+                </button>
+              </>
+            ) : (
+              <button onClick={() => setConfirmBulk(true)} disabled={selected.size === 0}
+                      className="flex items-center gap-1.5 bg-red text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50">
+                <Icon name="trash" size={12} color="#fff" /> {t('common_delete')}
+              </button>
+            )}
+            <button onClick={exitSelect}
+                    className="text-xs text-secondary border border-border px-3 py-1.5 rounded-lg bg-bg-1">
+              {t('common_cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+      {bulkMsg && (
+        <div className="flex items-center gap-2 text-xs text-red bg-red-dim rounded-xl px-3 py-2">
+          <Icon name="alert" size={13} color="rgb(var(--color-red))" /> {bulkMsg}
+          <button onClick={() => setBulkMsg(null)} className="ml-auto"><Icon name="x" size={12} color="#9aa3ad" /></button>
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <Card className="p-8 text-center">
@@ -1611,8 +1699,12 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
             const st = statusOf(l)
             const m = LIEF_STATUS[st]
             return (
-              <div key={l.id} className="bg-bg-1 border border-border rounded-xl px-3 py-2.5 flex items-center gap-3"
-                   style={{ borderLeft: `3px solid ${m.color}` }}>
+              <div key={l.id}
+                   onClick={selectMode ? () => toggleSelected(l.id) : undefined}
+                   className={`bg-bg-1 border rounded-xl px-3 py-2.5 flex items-center gap-3 ${
+                     selectMode ? 'cursor-pointer' : ''} ${selected.has(l.id) ? 'border-amber' : 'border-border'}`}
+                   style={{ borderLeft: `3px solid ${selected.has(l.id) ? '#e8821c' : m.color}` }}>
+                {selectMode && checkBox(selected.has(l.id))}
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
                      style={{ background: lfAvColor(l.name) }}>
                   {l.name.slice(0, 2).toUpperCase()}
@@ -1629,12 +1721,12 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
                 <span className="text-xs font-semibold px-2 py-1 rounded-md shrink-0" style={{ background: m.color + '1a', color: m.color }}>
                   {t(m.labelKey)}
                 </span>
-                <button onClick={() => onNewBestellung(l.id)}
+                <button onClick={e => { e.stopPropagation(); onNewBestellung(l.id) }}
                         className="text-xs font-semibold px-3 py-1.5 rounded-lg shrink-0"
                         style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
                   {t('lief_new_order')}
                 </button>
-                <button onClick={() => onEditLieferant(l)} className="p-1.5 rounded-lg hover:bg-bg-2 border border-border shrink-0">
+                <button onClick={e => { e.stopPropagation(); onEditLieferant(l) }} className="p-1.5 rounded-lg hover:bg-bg-2 border border-border shrink-0">
                   <Icon name="dots" size={13} color="#9aa3ad" />
                 </button>
               </div>
@@ -1650,11 +1742,14 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
             const knapp = knappFor(l)
             return (
               <Card key={l.id}
-                    className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] sm:hover:-translate-y-0.5 sm:hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200 animate-fade-up flex flex-col"
+                    onClick={selectMode ? () => toggleSelected(l.id) : undefined}
+                    className={`p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] sm:hover:-translate-y-0.5 sm:hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200 animate-fade-up flex flex-col ${
+                      selected.has(l.id) ? 'border-amber' : ''}`}
                     style={{ animationDelay: `${Math.min(i, 12) * 30}ms`,
-                             borderLeft: `3px solid ${m.color}`,
-                             ...(st !== 'aktiv' ? { borderColor: m.color + '55', borderLeftColor: m.color } : {}) }}>
+                             borderLeft: `3px solid ${selected.has(l.id) ? '#e8821c' : m.color}`,
+                             ...(st !== 'ausreichend' && !selected.has(l.id) ? { borderColor: m.color + '55', borderLeftColor: m.color } : {}) }}>
                 <div className="flex items-start gap-3">
+                  {selectMode && checkBox(selected.has(l.id))}
                   <div className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
                        style={{ background: lfAvColor(l.name) }}>
                     {l.name.slice(0, 2).toUpperCase()}
@@ -1668,7 +1763,7 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
                   </div>
                   <span className="text-[11px] font-semibold pl-1.5 pr-2 py-0.5 rounded-md shrink-0 inline-flex items-center gap-1"
                         style={{ background: m.color + '1a', color: m.color }}>
-                    <StatusDot color={m.color} pulse={st === 'verzoegert'} size={5} />
+                    <StatusDot color={m.color} pulse={st === 'verzoegert' || st === 'niedrig'} size={5} />
                     {t(m.labelKey)}
                   </span>
                 </div>
@@ -1680,16 +1775,16 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
                 <div className="grid grid-cols-3 gap-2 border-t border-border pt-3 mt-3 mb-3">
                   {statBlock(t('lief_offene_best_short'), offeneCount(l))}
                   {statBlock(t('lief_lieferzeit_short'),
-                    <span className={st === 'verzoegert' ? 'text-amber' : st === 'knapp' ? 'text-amber' : ''}>{l.lieferzeit || '—'}</span>)}
+                    <span className={st !== 'ausreichend' ? 'text-amber' : ''}>{l.lieferzeit || '—'}</span>)}
                   {statBlock(t('lief_bewertung'), <Sterne value={l.bewertung} />)}
                 </div>
                 <div className="flex gap-2 mt-auto">
-                  <button onClick={() => onNewBestellung(l.id)}
+                  <button onClick={e => { e.stopPropagation(); onNewBestellung(l.id) }}
                           className="flex-1 text-xs font-semibold px-3 py-2 rounded-lg"
                           style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
                     {t('lief_new_order')}
                   </button>
-                  <button onClick={() => onEditLieferant(l)}
+                  <button onClick={e => { e.stopPropagation(); onEditLieferant(l) }}
                           className="px-2.5 rounded-lg bg-bg-2 border border-border hover:bg-bg-3 transition-colors">
                     <Icon name="dots" size={14} color="#9aa3ad" />
                   </button>
@@ -1961,7 +2056,7 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
                                                           initialFilterLief={jumpFilterLief} onFilterLiefConsumed={() => setJumpFilterLief(null)} />
     return <LieferantenTab lieferanten={lieferanten} articles={articles} bestellungen={bestellungen}
                             onNewLieferant={openNewLieferant} onEditLieferant={openEditLieferant}
-                            onNewBestellung={openNewBestellung} />
+                            onNewBestellung={openNewBestellung} onReload={loadLieferanten} />
   }
 
   return (
