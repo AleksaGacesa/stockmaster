@@ -858,10 +858,12 @@ function DesktopBuchen({ articles, onBooked, projekte, lieferantenInfo, reservie
                   ].map(o => (
                     <button key={o.id} onClick={() => { setTyp(o.id); setWarn(null) }}
                             className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-semibold border transition-all"
-                            style={typ === o.id
-                              ? { background: o.bg, borderColor: o.color, color: o.color }
-                              : { background: 'rgb(var(--bg-2))', borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>
-                      <Icon name={o.icon} size={13} color={typ === o.id ? o.color : '#6b7480'} />
+                            style={{
+                              background: o.bg, color: o.color,
+                              borderColor: typ === o.id ? o.color : 'transparent',
+                              opacity: typ === o.id ? 1 : 0.55,
+                            }}>
+                      <Icon name={o.icon} size={13} color={o.color} />
                       {o.label}
                     </button>
                   ))}
