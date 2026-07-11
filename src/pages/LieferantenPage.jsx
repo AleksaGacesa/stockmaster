@@ -1471,68 +1471,227 @@ function BestellungDetail({ bestellung, onBack, onRefresh, setArticles, setMoves
   )
 }
 
-/* ══ LIEFERANTEN TAB ══ */
+/* ══ LIEFERANTEN TAB — Lieferanten-Dashboard ══ */
+const LF_AV_COLORS = ['#e8821c', '#4a90d9', '#4caf6e', '#9b6bd9', '#d96b8f', '#3fb6c4']
+const lfAvColor = (name = '') => LF_AV_COLORS[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % LF_AV_COLORS.length]
+
+const LIEF_STATUS = {
+  aktiv:      { labelKey: 'lief_status_aktiv',      color: '#4caf6e' },
+  knapp:      { labelKey: 'lief_status_knapp',      color: '#e8821c' },
+  verzoegert: { labelKey: 'lief_status_verzoegert', color: '#e0524a' },
+}
+// Country isn't a column — read it off the address; German suppliers
+// rarely write "Deutschland" out, so that is the fallback.
+const LF_LAENDER = ['Österreich', 'Schweiz', 'Niederlande', 'Frankreich', 'Polen', 'Deutschland']
+const lfLand = (l) => LF_LAENDER.find(x => (l.adresse ?? '').includes(x)) ?? 'Deutschland'
+
 function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, onEditLieferant, onNewBestellung }) {
   const { t } = useLanguage()
   const [search, setSearch] = useState('')
-  const filtered = lieferanten.filter(l => l.name.toLowerCase().includes(search.toLowerCase()))
+  const [filterKat, setFilterKat]     = useState('alle')
+  const [filterLand, setFilterLand]   = useState('alle')
+  const [filterStatus, setFilterStatus] = useState('alle')
+  const [view, setView] = useState('karten')
 
-  const openCount = (lieferantId) => bestellungen.filter(b => b.lieferant_id === lieferantId && b.status !== 'eingetroffen').length
+  /* ── per-supplier derived facts ── */
+  const offeneCount = (l) => bestellungen.filter(b => b.lieferant_id === l.id && b.status !== 'eingetroffen').length
+  // "Verzögert" = an order went out more than 7 days ago and still
+  // hasn't arrived — the supplier is sitting on it.
+  const istVerzoegert = (l) => bestellungen.some(b =>
+    b.lieferant_id === l.id && (b.status === 'gesendet' || b.status === 'bestaetigt') &&
+    b.gesendet_at && (Date.now() - new Date(b.gesendet_at)) > 7 * 86400000)
+  const knappFor = (l) => lowStockForLieferant(articles, l)
+  const statusOf = (l) => istVerzoegert(l) ? 'verzoegert' : knappFor(l).length > 0 ? 'knapp' : 'aktiv'
+
+  const katVonLief = useMemo(() => {
+    const map = new Map()
+    articles.forEach(a => {
+      if (!a.lieferant_id || !a.kategorie) return
+      const set = map.get(a.lieferant_id) ?? new Set()
+      set.add(a.kategorie)
+      map.set(a.lieferant_id, set)
+    })
+    return map
+  }, [articles])
+  const kategorien = useMemo(() => [...new Set(articles.map(a => a.kategorie).filter(Boolean))].sort(), [articles])
+  const laender = useMemo(() => [...new Set(lieferanten.map(lfLand))].sort(), [lieferanten])
+
+  /* ── headline stats ── */
+  const wocheAgo = new Date(Date.now() - 7 * 86400000)
+  const neueLief = lieferanten.filter(l => l.created_at && new Date(l.created_at) >= wocheAgo).length
+  const offeneB = bestellungen.filter(b => b.status !== 'eingetroffen')
+  const neueB = bestellungen.filter(b => new Date(b.created_at) >= wocheAgo).length
+  const verzoegerte = lieferanten.filter(istVerzoegert).length
+  const bewertete = lieferanten.filter(l => Number(l.bewertung) > 0)
+  const avgBew = bewertete.length ? bewertete.reduce((s, l) => s + Number(l.bewertung), 0) / bewertete.length : null
+  const bewWort = avgBew === null ? null : avgBew >= 4.5 ? t('lief_sehr_gut') : avgBew >= 3.5 ? t('lief_gut') : t('lief_okay')
+  const offeneWerte = offeneB.reduce((s, b) => s + bestellungTotal(b), 0)
+
+  const filtered = lieferanten.filter(l => {
+    const q = search.toLowerCase()
+    return (
+      (!q || l.name.toLowerCase().includes(q) || (l.email ?? '').toLowerCase().includes(q) || (l.ansprechpartner ?? '').toLowerCase().includes(q)) &&
+      (filterKat === 'alle' || (katVonLief.get(l.id)?.has(filterKat) ?? false)) &&
+      (filterLand === 'alle' || lfLand(l) === filterLand) &&
+      (filterStatus === 'alle' || statusOf(l) === filterStatus)
+    )
+  })
+
+  const statBlock = (label, value) => (
+    <div>
+      <div className="text-[10px] text-muted mb-0.5">{label}</div>
+      <div className="text-sm font-semibold font-mono">{value}</div>
+    </div>
+  )
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2">
-        <div className="relative flex-1 min-w-0">
+    <div className="space-y-4">
+      {/* ── stat cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3">
+        <LiefStatCard label={t('lief_stat_gesamt')} value={lieferanten.length} icon="user" color="#4a90d9"
+                      sub={neueLief > 0 ? `+${neueLief} ${t('lief_seit_woche')}` : undefined}
+                      subColor="rgb(var(--color-green))" />
+        <LiefStatCard label={t('lief_stat_offene')} value={offeneB.length} icon="cart" color="#9b6bd9"
+                      sub={neueB > 0 ? `+${neueB} ${t('lief_seit_woche')}` : undefined}
+                      subColor="rgb(var(--color-green))" />
+        <LiefStatCard label={t('lief_stat_verzoegerung')} value={verzoegerte} icon="clock" color="#e8821c"
+                      sub={t('lief_verzoegert_sub')}
+                      subColor={verzoegerte > 0 ? 'rgb(var(--color-red))' : undefined} />
+        <LiefStatCard label={t('lief_stat_bewertung')} value={avgBew === null ? '—' : `${avgBew.toFixed(1).replace('.', ',')} / 5`}
+                      icon="star" color="#4caf6e" sub={bewWort} />
+        <LiefStatCard label={t('lief_stat_offene_werte')} value={fmt(offeneWerte)} icon="chart" color="#e8b23c"
+                      sub={`${offeneB.length} ${t('lief_tab_orders')}`} />
+      </div>
+
+      {/* ── filter bar ── */}
+      <Card className="p-3 flex flex-wrap gap-2 items-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+        <div className="relative flex-1 min-w-[180px]">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
             <Icon name="search" size={13} color="#6b7480" />
           </div>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('lief_search_supplier_ph')}
-                 className="w-full bg-bg-2 border border-border rounded-xl pl-8 pr-3 py-2.5 text-sm outline-none focus:border-amber" />
+                 className="w-full bg-bg-2 border border-border rounded-xl pl-8 pr-3 py-2 text-sm outline-none focus:border-amber" />
         </div>
-        <button onClick={onNewLieferant}
-                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold shrink-0"
-                style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-          <Icon name="plus" size={14} color="#181c20" /> {t('lief_supplier')}
-        </button>
-      </div>
+        <select value={filterKat} onChange={e => setFilterKat(e.target.value)}
+                className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+          <option value="alle">{t('lief_alle_kategorien')}</option>
+          {kategorien.map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <select value={filterLand} onChange={e => setFilterLand(e.target.value)}
+                className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+          <option value="alle">{t('lief_alle_laender')}</option>
+          {laender.map(x => <option key={x} value={x}>{x}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+          <option value="alle">{t('lief_alle_status')}</option>
+          {Object.entries(LIEF_STATUS).map(([k, m]) => <option key={k} value={k}>{t(m.labelKey)}</option>)}
+        </select>
+        <div className="hidden lg:flex items-center gap-1 bg-bg-2 border border-border rounded-xl p-1">
+          <button onClick={() => setView('karten')} title="Karten"
+                  className={`p-1.5 rounded-lg transition-colors ${view === 'karten' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+            <Icon name="grid" size={14} color="currentColor" />
+          </button>
+          <button onClick={() => setView('liste')} title="Liste"
+                  className={`p-1.5 rounded-lg transition-colors ${view === 'liste' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+            <Icon name="list" size={14} color="currentColor" />
+          </button>
+        </div>
+      </Card>
 
       {filtered.length === 0 ? (
         <Card className="p-8 text-center">
           <Icon name="building" size={24} color="#6b7480" />
           <p className="text-secondary text-sm mt-2">{t('lief_no_suppliers_found')}</p>
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      ) : view === 'liste' ? (
+        /* ── compact list ── */
+        <div className="space-y-1.5">
           {filtered.map(l => {
-            const knapp = lowStockForLieferant(articles, l)
+            const st = statusOf(l)
+            const m = LIEF_STATUS[st]
             return (
-              <Card key={l.id} className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] sm:hover:border-border-strong sm:hover:-translate-y-0.5 sm:hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-bg-2 text-amber font-semibold text-sm flex items-center justify-center shrink-0">
+              <div key={l.id} className="bg-bg-1 border border-border rounded-xl px-3 py-2.5 flex items-center gap-3"
+                   style={{ borderLeft: `3px solid ${m.color}` }}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                     style={{ background: lfAvColor(l.name) }}>
+                  {l.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm truncate">{l.name}</div>
+                  <div className="text-[11px] text-muted truncate">{l.email || '—'} · {lfLand(l)}</div>
+                </div>
+                <div className="hidden md:flex items-center gap-5 text-xs">
+                  <span className="font-mono">{offeneCount(l)} {t('lief_open_word')}</span>
+                  <span className="font-mono text-secondary">{l.lieferzeit || '—'}</span>
+                  <Sterne value={l.bewertung} />
+                </div>
+                <span className="text-xs font-semibold px-2 py-1 rounded-md shrink-0" style={{ background: m.color + '1a', color: m.color }}>
+                  {t(m.labelKey)}
+                </span>
+                <button onClick={() => onNewBestellung(l.id)}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg shrink-0"
+                        style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                  {t('lief_new_order')}
+                </button>
+                <button onClick={() => onEditLieferant(l)} className="p-1.5 rounded-lg hover:bg-bg-2 border border-border shrink-0">
+                  <Icon name="dots" size={13} color="#9aa3ad" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        /* ── card grid (mockup) ── */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {filtered.map((l, i) => {
+            const st = statusOf(l)
+            const m = LIEF_STATUS[st]
+            const knapp = knappFor(l)
+            return (
+              <Card key={l.id}
+                    className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] sm:hover:-translate-y-0.5 sm:hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.3)] transition-all duration-200 animate-fade-up flex flex-col"
+                    style={{ animationDelay: `${Math.min(i, 12) * 30}ms`,
+                             borderLeft: `3px solid ${m.color}`,
+                             ...(st !== 'aktiv' ? { borderColor: m.color + '55', borderLeftColor: m.color } : {}) }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                       style={{ background: lfAvColor(l.name) }}>
                     {l.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-sm truncate">{l.name}</div>
-                    {l.email && <div className="text-xs text-muted truncate">{l.email}</div>}
+                    {l.email && <div className="text-[11px] text-muted truncate">{l.email}</div>}
+                    <div className="flex items-center gap-1 text-[11px] text-muted mt-0.5">
+                      <Icon name="mapPin" size={10} color="#6b7480" /> {lfLand(l)}
+                    </div>
                   </div>
-                  {openCount(l.id) > 0 && (
-                    <span className="text-xs font-semibold shrink-0" style={{ color: '#4a90d9' }}>{openCount(l.id)} {t('lief_open_word')}</span>
-                  )}
+                  <span className="text-[11px] font-semibold pl-1.5 pr-2 py-0.5 rounded-md shrink-0 inline-flex items-center gap-1"
+                        style={{ background: m.color + '1a', color: m.color }}>
+                    <StatusDot color={m.color} pulse={st === 'verzoegert'} size={5} />
+                    {t(m.labelKey)}
+                  </span>
                 </div>
                 {knapp.length > 0 && (
-                  <div className="flex items-center gap-1.5 text-xs text-amber bg-amber-dim rounded-lg px-2.5 py-1.5 mb-3">
-                    <Icon name="alert" size={12} color="#e8821c" /> {knapp.length} {t('lief_articles_tight')}
+                  <div className="flex items-center gap-1.5 text-[11px] text-amber mt-2">
+                    <Icon name="alert" size={11} color="#e8821c" /> {knapp.length} {t('lief_articles_tight')}
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="grid grid-cols-3 gap-2 border-t border-border pt-3 mt-3 mb-3">
+                  {statBlock(t('lief_offene_best_short'), offeneCount(l))}
+                  {statBlock(t('lief_lieferzeit_short'),
+                    <span className={st === 'verzoegert' ? 'text-amber' : st === 'knapp' ? 'text-amber' : ''}>{l.lieferzeit || '—'}</span>)}
+                  {statBlock(t('lief_bewertung'), <Sterne value={l.bewertung} />)}
+                </div>
+                <div className="flex gap-2 mt-auto">
                   <button onClick={() => onNewBestellung(l.id)}
                           className="flex-1 text-xs font-semibold px-3 py-2 rounded-lg"
                           style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
                     {t('lief_new_order')}
                   </button>
                   <button onClick={() => onEditLieferant(l)}
-                          className="p-2 rounded-lg bg-bg-2 border border-border">
-                    <Icon name="edit" size={14} color="#9aa3ad" />
+                          className="px-2.5 rounded-lg bg-bg-2 border border-border hover:bg-bg-3 transition-colors">
+                    <Icon name="dots" size={14} color="#9aa3ad" />
                   </button>
                 </div>
               </Card>
@@ -1835,10 +1994,11 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
             <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('lief_title')}</h1>
             <p className="text-secondary text-sm">{t('lief_subtitle')}</p>
           </div>
-          <button onClick={() => openNewBestellung(null)}
+          <button onClick={() => tab === 'lieferanten' ? openNewLieferant() : openNewBestellung(null)}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
                   style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-            <Icon name="plus" size={15} color="#181c20" /> {t('lief_new_order')}
+            <Icon name="plus" size={15} color="#181c20" />
+            {tab === 'lieferanten' ? t('lief_add_supplier') : t('lief_new_order')}
           </button>
         </div>
         <div className="flex gap-1 border-b border-border mb-6">
