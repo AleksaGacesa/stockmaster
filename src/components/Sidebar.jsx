@@ -10,17 +10,15 @@ import { useOnlinePresence } from '../hooks/useOnlinePresence'
 
 const NAV_ITEMS = [
   { to: '/',             labelKey: 'nav_home',        icon: 'home' },
-  { to: '/dashboard',    labelKey: 'nav_dashboard',   icon: 'chart',    managerOnly: true },
   { to: '/uebersicht',   labelKey: 'nav_uebersicht',  icon: 'box' },
   { to: '/bewegung',     labelKey: 'nav_bewegung',    icon: 'truck' },
-  { to: '/montagen',     labelKey: 'nav_montagen',    icon: 'mapPin' },
-  { to: '/auftraege',    labelKey: 'nav_auftraege',   icon: 'clipboard', managerOnly: true },
-  { to: '/kalender',     labelKey: 'nav_kalender',    icon: 'calendar', managerOnly: true },
-  { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', plainWorkerOnly: true },
   { to: '/lieferanten',  labelKey: 'nav_lieferanten', icon: 'building', managerOnly: true },
+  { to: '/auftraege',    labelKey: 'nav_auftraege',   icon: 'clipboard', managerOnly: true },
+  { to: '/montagen',     labelKey: 'nav_montagen',    icon: 'mapPin' },
+  { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', plainWorkerOnly: true },
   { to: '/inventur',     labelKey: 'nav_inventur',    icon: 'filter' },
+  { to: '/kalender',     labelKey: 'nav_kalender',    icon: 'calendar', managerOnly: true },
   { to: '/administration', labelKey: 'nav_administration', icon: 'download', managerOnly: true, desktopOnly: true },
-  { to: '/import',       labelKey: 'nav_import',      icon: 'upload',   managerOnly: true, desktopOnly: true },
   { to: '/einstellungen',labelKey: 'nav_einstellungen', icon: 'settings', ownerOnly: true },
 ]
 

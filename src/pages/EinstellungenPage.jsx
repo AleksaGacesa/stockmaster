@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { supabaseAdmin } from '../lib/supabaseAdmin'
@@ -177,6 +178,7 @@ function FirmaCard({ firma, setFirma, onSave, saving, msg }) {
 
 export default function EinstellungenPage({ articles, moves, setArticles, setMoves }) {
   const { t } = useLanguage()
+  const navigate = useNavigate()
   const [users, setUsers]             = useState([])
   const [showAddUser, setShowAddUser] = useState(false)
   const [newEmail, setNewEmail]       = useState('')
@@ -329,6 +331,16 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
             </div>
           </Card>
 
+          {/* Import */}
+          <Card className="p-4">
+            <h2 className="font-semibold text-sm mb-2">{t('nav_import')}</h2>
+            <p className="text-xs text-secondary mb-3">{t('set_import_desc')}</p>
+            <button onClick={() => navigate('/import')}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm bg-bg-2 border border-border">
+              <Icon name="upload" size={14} color="#9aa3ad" /> {t('set_import_open')}
+            </button>
+          </Card>
+
           {/* Info */}
           <Card className="p-4">
             <h2 className="font-semibold text-sm mb-2">{t('set_storage_location')}</h2>
@@ -398,6 +410,14 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
                   <Icon name="download" size={15} color="#9aa3ad" /> {t('set_export_json')}
                 </button>
               </div>
+            </Card>
+            <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+              <h2 className="font-semibold mb-2">{t('nav_import')}</h2>
+              <p className="text-xs text-secondary mb-4">{t('set_import_desc')}</p>
+              <button onClick={() => navigate('/import')}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-primary hover:bg-bg-3 transition-colors">
+                <Icon name="upload" size={15} color="#9aa3ad" /> {t('set_import_open')}
+              </button>
             </Card>
             <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
               <h2 className="font-semibold mb-2">{t('set_storage_location')}</h2>
