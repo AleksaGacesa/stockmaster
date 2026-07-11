@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { to: '/montagen',     labelKey: 'nav_montagen',    icon: 'mapPin' },
   { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', plainWorkerOnly: true },
   { to: '/inventur',     labelKey: 'nav_inventur',    icon: 'filter' },
+  { to: '/dashboard',    labelKey: 'nav_dashboard',   icon: 'chart',    managerOnly: true },
   { to: '/kalender',     labelKey: 'nav_kalender',    icon: 'calendar', managerOnly: true },
   { to: '/administration', labelKey: 'nav_administration', icon: 'download', managerOnly: true, desktopOnly: true },
   { to: '/einstellungen',labelKey: 'nav_einstellungen', icon: 'settings', ownerOnly: true },
