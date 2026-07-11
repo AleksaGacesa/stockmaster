@@ -8,6 +8,7 @@ import Icon from '../components/Icon'
 import QrScannerCard from '../components/QrScannerCard'
 import StockBadge from '../components/StockBadge'
 import ArtikelBild from '../components/ArtikelBild'
+import { buildReservierungMap } from '../lib/auftraegeHelpers'
 
 const fmtDt = (d) => new Intl.DateTimeFormat('de-DE', {
   day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -23,6 +24,7 @@ function useBuchenLogic({ articles, onBooked, profile, projekte }) {
   const [menge, setMenge]       = useState('')
   const [projekt, setProjekt]   = useState('')
   const [projektId, setProjektId] = useState('')
+  const [bemerkung, setBemerkung] = useState('')
   const [error, setError]       = useState(null)
   const [success, setSuccess]   = useState(null)
   const [warn, setWarn]         = useState(null) // { geplant, verbraucht, menge } or null
@@ -56,7 +58,7 @@ function useBuchenLogic({ articles, onBooked, profile, projekte }) {
     const onPopState = () => {
       pushedHistory.current = false
       stopScan(); setStep('method'); setSelected(null); setTyp(null)
-      setMenge(''); setProjekt(''); setProjektId(''); setError(null); setScanError(null); setSuccess(null)
+      setMenge(''); setProjekt(''); setProjektId(''); setBemerkung(''); setError(null); setScanError(null); setSuccess(null)
       setWarn(null)
     }
     window.addEventListener('popstate', onPopState)
@@ -92,7 +94,7 @@ function useBuchenLogic({ articles, onBooked, profile, projekte }) {
 
   const reset = useCallback(() => {
     stopScan(); setStep('method'); setSelected(null); setTyp(null)
-    setMenge(''); setProjekt(''); setProjektId(''); setError(null); setScanError(null); setSuccess(null)
+    setMenge(''); setProjekt(''); setProjektId(''); setBemerkung(''); setError(null); setScanError(null); setSuccess(null)
     setWarn(null)
     // Closed via an in-app button rather than the phone's back gesture —
     // consume the history entry we pushed so it doesn't linger as a
@@ -111,10 +113,13 @@ function useBuchenLogic({ articles, onBooked, profile, projekte }) {
       : projekt.trim()
     // Atomic server-side update via RPC — two people booking the same
     // article at once no longer risk one update overwriting the other.
+    const notizParts = []
+    if (projektText) notizParts.push(`Projekt: ${projektText}`)
+    if (bemerkung.trim()) notizParts.push(bemerkung.trim())
     const { error: rpcError } = await supabase.rpc('book_movement', {
       p_artikel_id: selected.id, p_typ: typ, p_menge: m,
       p_projekt: projektText || null,
-      p_notiz: projektText ? `Projekt: ${projektText}` : '',
+      p_notiz: notizParts.join(' · '),
       p_von_user: profile?.display_name ?? '', p_von_user_id: profile?.id ?? null,
       p_projekt_id: projektId ? Number(projektId) : null,
     })
@@ -124,7 +129,7 @@ function useBuchenLogic({ articles, onBooked, profile, projekte }) {
     setSuccess({ typ, menge: m, einheit: selected.einheit, name: selected.name, projekt: projektText })
     onBooked()
     setTimeout(() => { setSuccess(null); reset() }, 2000)
-  }, [menge, typ, projekt, projektId, projekte, selected, profile, onBooked, reset])
+  }, [menge, typ, projekt, projektId, bemerkung, projekte, selected, profile, onBooked, reset])
 
   const handleSubmit = useCallback(async () => {
     const m = Number(menge)
@@ -161,7 +166,7 @@ function useBuchenLogic({ articles, onBooked, profile, projekte }) {
 
   return {
     step, setStep, search, setSearch, selected, typ, setTyp,
-    menge, setMenge, projekt, setProjekt, projektId, setProjektId, error, success,
+    menge, setMenge, projekt, setProjekt, projektId, setProjektId, bemerkung, setBemerkung, error, success,
     scanning, scanError, videoRef, canvasRef,
     startScan, stopScan, pickArticle, results, reset, handleSubmit,
     warn, setWarn, doBook, booking,
@@ -468,52 +473,501 @@ function MobileBuchen({ articles, onBooked, projekte }) {
   return null
 }
 
-/* ══ DESKTOP BUCHEN ══ */
-function DesktopBuchen({ articles, onBooked, projekte }) {
-  const { profile } = useAuth()
-  const logic = useBuchenLogic({ articles, onBooked, profile, projekte })
-  const { step, search, setSearch, selected, typ, setTyp, menge, setMenge,
-          projekt, setProjekt, projektId, setProjektId, error, success,
-          pickArticle, results, reset, handleSubmit, warn, setWarn, doBook, booking,
-          filterKat, setFilterKat, filterLager, setFilterLager, filterLief, setFilterLief,
-          filterStock, setFilterStock, kategorien, lagerorte, lieferanten, activeFilters, clearFilters } = logic
+/* ══ DESKTOP BUCHEN — Bestands-Dashboard ══ */
+const fmtEur = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n)
 
-  // Desktop can't scan QR codes, so the search panel is the only entry point.
-  if (step === 'method' || step === 'search') return (
-    <SearchView search={search} setSearch={setSearch} results={results}
-                pickArticle={pickArticle} onClose={reset}
-                filterKat={filterKat} setFilterKat={setFilterKat}
-                filterLager={filterLager} setFilterLager={setFilterLager}
-                filterLief={filterLief} setFilterLief={setFilterLief}
-                filterStock={filterStock} setFilterStock={setFilterStock}
-                kategorien={kategorien} lagerorte={lagerorte} lieferanten={lieferanten}
-                activeFilters={activeFilters} clearFilters={clearFilters} />
+// Status is judged on what is actually AVAILABLE (stock minus what open
+// projects have reserved), not the raw shelf quantity.
+const BEW_STATUS = {
+  ausreichend: { labelKey: 'lief_status_ausreichend',   color: '#4caf6e' },
+  knapp:       { labelKey: 'lief_status_knapp',         color: '#e8821c' },
+  niedrig:     { labelKey: 'lief_status_niedrig',       color: '#e0524a' },
+  nicht_verf:  { labelKey: 'bew_status_nicht_verf',     color: '#e0524a' },
+}
+const bewStatus = (a, verfuegbar) => {
+  if (verfuegbar <= 0 && a.menge > 0) return 'nicht_verf'
+  if (verfuegbar < a.mindestbestand) return 'niedrig'
+  if (verfuegbar < a.mindestbestand * 1.5) return 'knapp'
+  return 'ausreichend'
+}
+
+function BewStatusBadge({ status }) {
+  const { t } = useLanguage()
+  const m = BEW_STATUS[status]
+  return (
+    <span className="text-xs font-semibold pl-1.5 pr-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1.5"
+          style={{ background: m.color + '1a', color: m.color }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />
+      {t(m.labelKey)}
+    </span>
   )
-  if (step === 'form' && selected) return (
-  <div className="flex justify-center pt-10">
-    <FormView
-      selected={selected}
-      typ={typ}
-      setTyp={setTyp}
-      menge={menge}
-      setMenge={setMenge}
-      projekt={projekt}
-      setProjekt={setProjekt}
-      projektId={projektId}
-      setProjektId={setProjektId}
-      projekte={projekte}
-      error={error}
-      success={success}
-      handleSubmit={handleSubmit}
-      reset={reset}
-      warn={warn}
-      setWarn={setWarn}
-      doBook={doBook}
-      booking={booking}
-    />
-  </div>
-)
-  return null
+}
+
+function BewStatCard({ label, value, sub, subColor, icon, color }) {
+  return (
+    <Card className="p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: color + '1f' }}>
+          <Icon name={icon} size={15} color={color} />
+        </div>
+        <span className="text-xs text-secondary leading-tight">{label}</span>
+      </div>
+      <div className="text-lg font-bold font-mono truncate">{value}</div>
+      <div className="text-[11px] mt-0.5 truncate" style={{ color: subColor ?? 'rgb(var(--text-muted))' }}>
+        {sub ?? ' '}
+      </div>
+    </Card>
+  )
+}
+
+/* 30-day stock line, reconstructed backwards from the article's own
+   movements: today's quantity is known, each day's point re-adds what
+   left and removes what arrived after it. */
+function Verlauf30Chart({ artikel, artMoves }) {
+  const { t } = useLanguage()
+  const points = useMemo(() => {
+    const days = 30
+    const now = new Date(); now.setHours(23, 59, 59, 999)
+    const pts = []
+    for (let i = days; i >= 0; i--) {
+      const end = new Date(now.getTime() - i * 86400000)
+      let m = Number(artikel.menge)
+      artMoves.forEach(mv => {
+        if (new Date(mv.created_at) > end) m += (mv.typ === 'eingang' ? -1 : 1) * Number(mv.menge)
+      })
+      pts.push(Math.max(m, 0))
+    }
+    return pts
+  }, [artikel, artMoves])
+
+  const W = 250, H = 66, PAD = 6
+  const min = Math.min(...points), max = Math.max(...points)
+  const span = max - min || 1
+  const xy = (v, i) => `${PAD + (i / (points.length - 1)) * (W - PAD * 2)},${H - PAD - ((v - min) / span) * (H - PAD * 2)}`
+  const poly = points.map((v, i) => xy(v, i)).join(' ')
+  const fmtTag = (offset) => new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' })
+    .format(new Date(Date.now() - offset * 86400000))
+
+  return (
+    <div className="bg-bg-2 border border-border rounded-xl p-2.5">
+      <div className="text-[11px] text-secondary mb-1.5">{t('bew_verlauf30')}</div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
+        <polyline points={poly} fill="none" stroke="#e8821c" strokeWidth="1.8"
+                  strokeLinecap="round" strokeLinejoin="round" />
+        {points.map((v, i) => i % 5 === 0 && (
+          <circle key={i} cx={xy(v, i).split(',')[0]} cy={xy(v, i).split(',')[1]} r="1.8" fill="#e8821c" />
+        ))}
+      </svg>
+      <div className="flex justify-between text-[9px] text-muted font-mono mt-1">
+        <span>{fmtTag(30)}</span><span>{fmtTag(22)}</span><span>{fmtTag(15)}</span><span>{fmtTag(7)}</span><span>{fmtTag(0)}</span>
+      </div>
+    </div>
+  )
+}
+
+const BEW_PAGE_DEFAULT = 10
+
+function DesktopBuchen({ articles, onBooked, projekte, lieferantenInfo, reservierungMap, moves, onShowVerlauf }) {
+  const { profile } = useAuth()
+  const { t, lang } = useLanguage()
+  const logic = useBuchenLogic({ articles, onBooked, profile, projekte })
+  const { selected, typ, setTyp, menge, setMenge, projektId, setProjektId,
+          bemerkung, setBemerkung, error, success, pickArticle, reset,
+          handleSubmit, warn, setWarn, doBook, booking,
+          filterKat, setFilterKat, filterLager, setFilterLager, filterLief, setFilterLief,
+          filterStock, setFilterStock, kategorien, lagerorte, lieferanten } = logic
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
+  const [artMoves, setArtMoves] = useState([])
+
+  useEffect(() => { setPage(0) }, [search, filterKat, filterLager, filterLief, filterStock])
+
+  // Booking type defaults to Wareneingang once something is selected.
+  useEffect(() => { if (selected && !typ) setTyp('eingang') }, [selected, typ, setTyp])
+
+  /* ── derived per-article numbers ── */
+  const reserviert = (a) => Math.min(reservierungMap[a.id] ?? 0, Number(a.menge))
+  const verfuegbar = (a) => Math.max(Number(a.menge) - (reservierungMap[a.id] ?? 0), 0)
+
+  /* ── headline stats ── */
+  const wocheAgo = new Date(Date.now() - 7 * 86400000)
+  const vor14 = new Date(Date.now() - 14 * 86400000)
+  const gesamtWert = articles.reduce((s, a) => s + Number(a.menge) * Number(a.preis), 0)
+  const reserviertWert = articles.reduce((s, a) => s + reserviert(a) * Number(a.preis), 0)
+  const verfuegbarWert = gesamtWert - reserviertWert
+  const neueArtikel = articles.filter(a => a.created_at && new Date(a.created_at) >= wocheAgo).length
+  const moves7 = moves.filter(m => new Date(m.created_at) >= wocheAgo).length
+  const movesVor7 = moves.filter(m => { const d = new Date(m.created_at); return d >= vor14 && d < wocheAgo }).length
+  const pct = (v) => gesamtWert > 0 ? `${((v / gesamtWert) * 100).toFixed(1).replace('.', ',')}% ${t('bew_vom_bestand')}` : undefined
+
+  /* ── table filtering + adaptive paging (viewport-pinned layout) ── */
+  const filtered = articles.filter(a => {
+    const q = search.trim().toLowerCase()
+    const st = bewStatus(a, verfuegbar(a))
+    return (
+      (!q || a.name.toLowerCase().includes(q) || a.nummer.toLowerCase().includes(q)) &&
+      (filterKat   === 'Alle' || a.kategorie === filterKat) &&
+      (filterLager === 'Alle' || a.lagerort  === filterLager) &&
+      (filterLief  === 'Alle' || a.lieferant === filterLief) &&
+      (filterStock === 'Alle' ||
+        (filterStock === 'Niedrig'     && (st === 'niedrig' || st === 'nicht_verf')) ||
+        (filterStock === 'Knapp'       && st === 'knapp') ||
+        (filterStock === 'Ausreichend' && st === 'ausreichend'))
+    )
+  })
+
+  const rootRef = useRef(null)
+  const [tabH, setTabH] = useState(null)
+  useEffect(() => {
+    const calc = () => {
+      const el = rootRef.current
+      if (!el) return
+      setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 28, 420))
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [])
+  const tableBoxRef = useRef(null)
+  const [pageSize, setPageSize] = useState(BEW_PAGE_DEFAULT)
+  useEffect(() => {
+    const el = tableBoxRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      if (!window.matchMedia('(min-width: 1280px)').matches) { setPageSize(BEW_PAGE_DEFAULT); return }
+      const h = el.clientHeight
+      if (h > 0) setPageSize(Math.min(Math.max(Math.floor((h - 36) / 60), 5), 40))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const pageCount = Math.max(Math.ceil(filtered.length / pageSize), 1)
+  const safePage = Math.min(page, pageCount - 1)
+  const paged = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
+  const from = filtered.length === 0 ? 0 : safePage * pageSize + 1
+  const to = Math.min((safePage + 1) * pageSize, filtered.length)
+
+  const sel = selected ?? paged[0] ?? null
+  const selId = sel?.id ?? null
+  // The details chart and "letzte Bewegung" need this article's own
+  // movement history — the shared `moves` prop only holds the newest
+  // 200 across all articles. Keyed on the effective selection (incl.
+  // the default first row), not just an explicit pick.
+  useEffect(() => {
+    if (!selId) { setArtMoves([]); return }
+    supabase.from('warenbewegungen').select('typ, menge, created_at')
+      .eq('artikel_id', selId).order('created_at', { ascending: false }).limit(150)
+      .then(({ data }) => setArtMoves(data ?? []))
+  }, [selId])
+  const selLief = sel ? lieferantenInfo.find(l => l.id === sel.lieferant_id) : null
+  const selVerf = sel ? verfuegbar(sel) : 0
+  const selRes  = sel ? reserviert(sel) : 0
+  const lastMove = artMoves[0] ?? null
+  const fmtLastMove = (ts) => {
+    const d = new Date(ts)
+    const zeit = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(d)
+    return new Date().toDateString() === d.toDateString()
+      ? `${t('mon_heute')}, ${zeit} Uhr`
+      : `${new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(d)}, ${zeit} Uhr`
+  }
+
+  const warnMsg = warn ? (warn.type === 'unplanned'
+    ? (lang === 'en'
+        ? `This material wasn't planned for this project. Book it anyway?`
+        : `Dieses Material wurde für dieses Projekt nicht eingeplant. Trotzdem buchen?`)
+    : (lang === 'en'
+        ? `This project has ${warn.geplant} planned, of which ${warn.verbraucht} are already booked. Book anyway?`
+        : `Für dieses Projekt sind ${warn.geplant} geplant, davon wurden bereits ${warn.verbraucht} gebucht. Trotzdem buchen?`)
+  ) : ''
+
+  const detailRow = (label, value) => (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-muted mb-0.5">{label}</div>
+      <div className="text-sm font-medium">{value}</div>
+    </div>
+  )
+
+  return (
+    <div ref={rootRef} className="space-y-4 xl:flex xl:flex-col xl:overflow-hidden xl:h-[var(--tab-h)]"
+         style={{ '--tab-h': tabH ? `${tabH}px` : 'auto' }}>
+      {/* ── stat cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3 xl:shrink-0">
+        <BewStatCard label={t('bew_stat_gesamtartikel')} value={articles.length} icon="package" color="#4a90d9"
+                     sub={neueArtikel > 0 ? `+${neueArtikel} ${t('bew_seit_woche')}` : undefined}
+                     subColor="rgb(var(--color-green))" />
+        <BewStatCard label={t('bew_stat_bestandswert')} value={fmtEur(gesamtWert)} icon="chart" color="#4caf6e" />
+        <BewStatCard label={t('bew_stat_reserviert')} value={fmtEur(reserviertWert)} icon="box" color="#e8821c"
+                     sub={pct(reserviertWert)} />
+        <BewStatCard label={t('bew_stat_verfuegbar')} value={fmtEur(verfuegbarWert)} icon="check" color="#4caf6e"
+                     sub={pct(verfuegbarWert)} subColor="rgb(var(--color-green))" />
+        <BewStatCard label={t('bew_stat_letzte7')} value={moves7} icon="refresh" color="#9b6bd9"
+                     sub={`${moves7 - movesVor7 >= 0 ? '+' : ''}${moves7 - movesVor7} ${t('bew_vs_vorherige')}`}
+                     subColor={moves7 - movesVor7 >= 0 ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
+      </div>
+
+      {/* ── search + filters ── */}
+      <Card className="p-3 space-y-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
+        <div className="relative">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            <Icon name="search" size={13} color="#6b7480" />
+          </div>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('bew_search_big_ph')}
+                 className="w-full bg-bg-2 border border-border rounded-xl pl-8 pr-3 py-2 text-sm outline-none focus:border-amber" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { v: filterKat, set: setFilterKat, opts: kategorien, all: t('lief_alle_kategorien') },
+            { v: filterLager, set: setFilterLager, opts: lagerorte, all: t('bew_alle_lagerorte') },
+            { v: filterLief, set: setFilterLief, opts: lieferanten, all: t('lief_alle_lieferanten') },
+          ].map((f, i) => (
+            <select key={i} value={f.v} onChange={e => f.set(e.target.value)}
+                    className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-xs text-secondary outline-none">
+              {f.opts.map(o => <option key={o} value={o}>{o === 'Alle' ? f.all : o}</option>)}
+            </select>
+          ))}
+          <select value={filterStock} onChange={e => setFilterStock(e.target.value)}
+                  className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-xs text-secondary outline-none">
+            <option value="Alle">{t('lief_bestand_alle')}</option>
+            <option value="Ausreichend">{t('lief_status_ausreichend')}</option>
+            <option value="Knapp">{t('lief_status_knapp')}</option>
+            <option value="Niedrig">{t('lief_status_niedrig')}</option>
+          </select>
+        </div>
+      </Card>
+
+      <div className="flex flex-col xl:flex-row gap-4 xl:flex-1 xl:min-h-0">
+        {/* ══ MAIN: stock table ══ */}
+        <div className="flex-1 min-w-0 w-full flex flex-col xl:min-h-0">
+          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col xl:min-h-0">
+            {filtered.length === 0 ? (
+              <p className="p-8 text-center text-muted text-sm">{t('bew_no_articles_found')}</p>
+            ) : (
+              <>
+                <div ref={tableBoxRef} className="overflow-x-auto flex-1 xl:min-h-0 xl:overflow-y-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_artikel')}</th>
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_nummer')}</th>
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_lagerort')}</th>
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_bestand')}</th>
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_verfuegbar')}</th>
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_reserviert')}</th>
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_einheit')}</th>
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_wert')}</th>
+                        <th className="px-3 py-2.5 font-medium">{t('bew_col_status')}</th>
+                        <th className="px-3 py-2.5 font-medium text-right">{t('bew_col_aktion')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paged.map(a => {
+                        const verf = verfuegbar(a), res = reserviert(a)
+                        const st = bewStatus(a, verf)
+                        const isSel = sel?.id === a.id
+                        return (
+                          <tr key={a.id} onClick={() => pickArticle(a)}
+                              className={`border-b border-border last:border-0 cursor-pointer transition-colors ${isSel ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-border">
+                                  <ArtikelBild artikel={a} iconSize={14} />
+                                </div>
+                                <span className="font-medium truncate max-w-[170px]">{a.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs text-secondary whitespace-nowrap">{a.nummer}</td>
+                            <td className="px-3 py-2 text-xs text-secondary whitespace-nowrap">{a.lagerort || '—'}</td>
+                            <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{a.menge}</td>
+                            <td className={`px-3 py-2 font-mono text-xs whitespace-nowrap font-semibold ${verf <= 0 ? 'text-red' : verf < a.mindestbestand ? 'text-red' : 'text-green'}`}>
+                              {verf}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs whitespace-nowrap text-amber font-semibold">
+                              {res > 0 ? res : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-secondary whitespace-nowrap">{a.einheit}</td>
+                            <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{fmtEur(Number(a.menge) * Number(a.preis))}</td>
+                            <td className="px-3 py-2"><BewStatusBadge status={st} /></td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center justify-end gap-0.5">
+                                <button title={t('bew_outgoing')}
+                                        onClick={e => { e.stopPropagation(); pickArticle(a); setTyp('ausgang') }}
+                                        className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
+                                  <Icon name="cart" size={13} color="#9aa3ad" />
+                                </button>
+                                <button title={t('bew_tab_verlauf')}
+                                        onClick={e => { e.stopPropagation(); onShowVerlauf(a.nummer) }}
+                                        className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
+                                  <Icon name="clock" size={13} color="#9aa3ad" />
+                                </button>
+                                <button onClick={e => { e.stopPropagation(); pickArticle(a) }}
+                                        className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
+                                  <Icon name="dots" size={13} color="#9aa3ad" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* pagination */}
+                <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted flex-wrap gap-2">
+                  <span>
+                    {lang === 'en'
+                      ? `Showing ${from} to ${to} of ${filtered.length} articles`
+                      : `Zeige ${from} bis ${to} von ${filtered.length} Artikeln`}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}
+                            className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-bg-2 transition-colors">
+                      <Icon name="chevronLeft" size={12} color="#9aa3ad" />
+                    </button>
+                    {Array.from({ length: Math.min(pageCount, 7) }).map((_, i) => (
+                      <button key={i} onClick={() => setPage(i)}
+                              className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                                i === safePage ? 'bg-amber text-bg-0' : 'border border-border text-secondary hover:bg-bg-2'
+                              }`}>
+                        {i + 1}
+                      </button>
+                    ))}
+                    <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}
+                            className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-bg-2 transition-colors">
+                      <Icon name="chevronRight" size={12} color="#9aa3ad" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </Card>
+        </div>
+
+        {/* ══ RIGHT PANEL — booking on top, details fill down to the
+            table's bottom edge; scrolls internally on xl if needed ══ */}
+        <div className="w-full xl:w-80 shrink-0 space-y-4 xl:min-h-0 xl:overflow-y-auto xl:pr-1 xl:flex xl:flex-col">
+          {sel ? (
+            <>
+              {/* Buchung erfassen — on top, the action the user came for */}
+              <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <h3 className="font-semibold text-sm mb-3">{t('bew_buchung_erfassen')}</h3>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {[
+                    { id: 'eingang', label: t('bew_incoming'), icon: 'arrowDown', color: 'rgb(var(--color-green))', bg: 'var(--color-green-dim)' },
+                    { id: 'ausgang', label: t('bew_outgoing'), icon: 'arrowUp',   color: 'rgb(var(--color-red))',   bg: 'var(--color-red-dim)' },
+                  ].map(o => (
+                    <button key={o.id} onClick={() => { setTyp(o.id); setWarn(null) }}
+                            className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-semibold border transition-all"
+                            style={typ === o.id
+                              ? { background: o.bg, borderColor: o.color, color: o.color }
+                              : { background: 'rgb(var(--bg-2))', borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>
+                      <Icon name={o.icon} size={13} color={typ === o.id ? o.color : '#6b7480'} />
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  {typ === 'ausgang' && (
+                    <div>
+                      <label className="block text-[11px] text-secondary mb-1">{t('bew_projekt_montage')}</label>
+                      <select value={projektId} onChange={e => setProjektId(e.target.value)}
+                              className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber">
+                        <option value="">{t('bew_projekt_waehlen')}</option>
+                        {projekte.map(p => <option key={p.id} value={p.id}>{p.name}{p.kunde ? ` — ${p.kunde}` : ''}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-[11px] text-secondary mb-1">{t('bew_menge')} ({sel.einheit})</label>
+                    <div className="relative">
+                      <input type="number" min="0" value={menge} onChange={e => setMenge(e.target.value)} placeholder="0"
+                             className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2 pr-12 text-sm font-mono outline-none focus:border-amber" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">{sel.einheit}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-secondary mb-1">{t('bew_bemerkung')}</label>
+                    <input type="text" value={bemerkung} onChange={e => setBemerkung(e.target.value)}
+                           placeholder={t('bew_bemerkung_ph')}
+                           className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber" />
+                  </div>
+                  {error && <p className="text-red text-xs">{error}</p>}
+                  {success && (
+                    <div className="flex items-center gap-2 text-green text-xs bg-green-dim rounded-xl px-3 py-2 animate-fade-up">
+                      <Icon name="check" size={13} color="#4caf6e" />
+                      {success.typ === 'eingang' ? '+' : '−'}{success.menge} {success.einheit} · {success.name}
+                    </div>
+                  )}
+                  {warn ? (
+                    <div className="bg-amber-dim border border-amber/40 rounded-xl p-3 space-y-2">
+                      <p className="text-xs text-amber">{warnMsg}</p>
+                      <div className="flex gap-2">
+                        <button onClick={doBook} disabled={booking}
+                                className="flex-1 bg-amber text-bg-0 text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-60">
+                          {lang === 'en' ? 'Book anyway' : 'Trotzdem buchen'}
+                        </button>
+                        <button onClick={() => setWarn(null)}
+                                className="text-xs text-secondary border border-border px-3 py-2 rounded-lg hover:bg-bg-2">
+                          {t('common_cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={handleSubmit} disabled={booking || !typ}
+                            className="w-full py-2.5 rounded-xl text-sm font-bold disabled:opacity-60"
+                            style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                      {booking ? '…' : typ === 'ausgang' ? t('bew_ausgang_buchen') : t('bew_eingang_buchen')}
+                    </button>
+                  )}
+                </div>
+              </Card>
+
+              {/* Artikel Details — compact, stretches to the column bottom */}
+              <Card className="p-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:flex-1 xl:flex xl:flex-col">
+                <h3 className="font-semibold text-sm mb-2">{t('bew_details_titel')}</h3>
+                <div className="flex items-center gap-2.5 mb-2">
+                  <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-border">
+                    <ArtikelBild artikel={sel} iconSize={17} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm truncate">{sel.name}</div>
+                    <div className="text-[11px] font-mono text-amber">{sel.nummer}</div>
+                  </div>
+                  <BewStatusBadge status={bewStatus(sel, selVerf)} />
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-2">
+                  {detailRow(t('bew_col_lagerort'), sel.lagerort || '—')}
+                  {detailRow(t('bew_col_einheit'), sel.einheit)}
+                  {detailRow(t('bew_lieferant'), sel.lieferant || '—')}
+                  {detailRow(t('bew_lieferzeit'), selLief?.lieferzeit || '—')}
+                </div>
+                <div className="grid grid-cols-3 gap-x-2 gap-y-2 border-t border-border pt-2 mt-2">
+                  {detailRow(t('bew_col_bestand'), <span className="font-mono">{sel.menge} {sel.einheit}</span>)}
+                  {detailRow(t('bew_col_verfuegbar'), <span className={`font-mono ${selVerf < sel.mindestbestand ? 'text-red' : 'text-green'}`}>{selVerf} {sel.einheit}</span>)}
+                  {detailRow(t('bew_col_reserviert'), <span className="font-mono text-amber">{selRes} {sel.einheit}</span>)}
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-2 mt-2 mb-2">
+                  {detailRow(t('bew_col_wert'), <span className="font-mono">{fmtEur(Number(sel.menge) * Number(sel.preis))}</span>)}
+                  {detailRow(t('bew_letzte_bewegung'),
+                    lastMove
+                      ? <span className="inline-flex items-center gap-1"><Icon name="clock" size={11} color="#9aa3ad" /> {fmtLastMove(lastMove.created_at)}</span>
+                      : '—')}
+                </div>
+                <div className="xl:mt-auto">
+                  <Verlauf30Chart artikel={sel} artMoves={artMoves} />
+                </div>
+              </Card>
+            </>
+          ) : (
+            <Card className="p-6 text-center">
+              <Icon name="box" size={24} color="#6b7480" />
+              <p className="text-muted text-xs mt-2">{t('bew_kein_artikel')}</p>
+            </Card>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // A movement tied to a real project (projekt_id) shows that project's
@@ -524,10 +978,13 @@ const movementProjectLabel = (m) => m.projekte?.dokument_nr
   : (m.projekt || '')
 
 /* ══ VERLAUF TAB ══ */
-function VerlaufTab({ moves }) {
+function VerlaufTab({ moves, initialSearch }) {
   const { t, lang } = useLanguage()
-  const [search, setSearch]       = useState('')
+  const [search, setSearch]       = useState(initialSearch ?? '')
   const [filterTyp, setFilterTyp] = useState('Alle')
+
+  // Arriving via an article row's clock button — prefilter to it.
+  useEffect(() => { if (initialSearch) setSearch(initialSearch) }, [initialSearch])
 
   const filtered = useMemo(() => moves.filter(m => {
     const q = search.toLowerCase()
@@ -649,11 +1106,41 @@ export default function BewegungPage({ articles, setArticles, moves, setMoves })
   const { t } = useLanguage()
   const [tab, setTab] = useState('buchen')
   const [projekte, setProjekte] = useState([])
+  const [projekteMat, setProjekteMat] = useState([])
+  const [verbrauchMap, setVerbrauchMap] = useState({})
+  const [lieferantenInfo, setLieferantenInfo] = useState([])
+  const [verlaufSearch, setVerlaufSearch] = useState(null)
+
+  const loadReservierung = useCallback(async () => {
+    const [{ data: pm }, { data: vb }] = await Promise.all([
+      supabase.from('projekte').select('id,status,material:projekt_material(artikel_id,geplant_menge,preis)')
+        .in('status', ['geplant', 'aktiv', 'pausiert']),
+      supabase.from('warenbewegungen').select('projekt_id, artikel_id, menge')
+        .eq('typ', 'ausgang').not('projekt_id', 'is', null),
+    ])
+    setProjekteMat(pm ?? [])
+    const vm = {}
+    ;(vb ?? []).forEach(m => {
+      vm[m.projekt_id] = vm[m.projekt_id] ?? {}
+      vm[m.projekt_id][m.artikel_id] = (vm[m.projekt_id][m.artikel_id] ?? 0) + Number(m.menge)
+    })
+    setVerbrauchMap(vm)
+  }, [])
 
   useEffect(() => {
     supabase.from('projekte').select('id,name,kunde,status').in('status', ['geplant', 'aktiv', 'pausiert']).order('name')
       .then(({ data }) => { if (data) setProjekte(data) })
-  }, [])
+    supabase.from('lieferanten').select('id,name,lieferzeit,versandart')
+      .then(({ data }) => { if (data) setLieferantenInfo(data) })
+    loadReservierung()
+  }, [loadReservierung])
+
+  // What open projects still have "spoken for" per artikel — drives the
+  // Verfügbar/Reserviert columns and the € stat cards.
+  const reservierungMap = useMemo(
+    () => buildReservierungMap(projekteMat, verbrauchMap),
+    [projekteMat, verbrauchMap]
+  )
 
   const onBooked = async () => {
     const [{ data: art }, { data: mov }] = await Promise.all([
@@ -662,7 +1149,10 @@ export default function BewegungPage({ articles, setArticles, moves, setMoves })
     ])
     if (art) setArticles(art)
     if (mov) setMoves(mov)
+    await loadReservierung()
   }
+
+  const showVerlauf = (nummer) => { setVerlaufSearch(nummer); setTab('verlauf') }
 
   return (
     <>
@@ -682,16 +1172,23 @@ export default function BewegungPage({ articles, setArticles, moves, setMoves })
         <div className="flex-1 overflow-y-auto p-3">
           {tab === 'buchen'
             ? <MobileBuchen articles={articles} onBooked={onBooked} projekte={projekte} />
-            : <VerlaufTab moves={moves} />
+            : <VerlaufTab moves={moves} initialSearch={verlaufSearch} />
           }
         </div>
       </div>
 
       {/* ══ DESKTOP ══ */}
       <div className="hidden sm:block p-6 lg:p-8">
-        <div className="mb-5">
-          <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('bew_title')}</h1>
-          <p className="text-secondary text-sm">{t('bew_subtitle')}</p>
+        <div className="mb-5 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('bew_title')}</h1>
+            <p className="text-secondary text-sm">{t('bew_subtitle')}</p>
+          </div>
+          <button onClick={() => setTab('buchen')}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+            <Icon name="plus" size={15} color="#181c20" /> {t('bew_buchung_erfassen')}
+          </button>
         </div>
         <div className="flex gap-1 border-b border-border mb-6">
           {[['buchen', t('bew_tab_buchen'), 'scan'], ['verlauf', t('bew_tab_verlauf'), 'refresh']].map(([id, label, icon]) => (
@@ -705,8 +1202,10 @@ export default function BewegungPage({ articles, setArticles, moves, setMoves })
           ))}
         </div>
         {tab === 'buchen'
-          ? <DesktopBuchen articles={articles} onBooked={onBooked} projekte={projekte} />
-          : <VerlaufTab moves={moves} />
+          ? <DesktopBuchen articles={articles} onBooked={onBooked} projekte={projekte}
+                           lieferantenInfo={lieferantenInfo} reservierungMap={reservierungMap}
+                           moves={moves} onShowVerlauf={showVerlauf} />
+          : <VerlaufTab moves={moves} initialSearch={verlaufSearch} />
         }
       </div>
     </>
