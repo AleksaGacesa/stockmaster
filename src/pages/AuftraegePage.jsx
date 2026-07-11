@@ -1086,6 +1086,38 @@ export default function AuftraegePage({ articles, setArticles }) {
     }
   }, [projekte, verbrauchMap, articles])
 
+  // On xl the whole list view is pinned to the viewport bottom (same
+  // pattern as Lieferanten/Bewegung): hard height measured from the
+  // content's stable top edge, Schnellstatistik pinned at the bottom,
+  // and the table box gets its height from the flex layout — the row
+  // count adapts to what actually fits. Re-bound when the list view
+  // (re)mounts (deps: loading/activeId), re-measured on resize.
+  const pinRef = useRef(null)
+  const [tabH, setTabH] = useState(null)
+  useEffect(() => {
+    const calc = () => {
+      const el = pinRef.current
+      if (!el) return
+      setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 44, 480))
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [loading, activeId])
+  const tableBoxRef = useRef(null)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
+  useEffect(() => {
+    const el = tableBoxRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      if (!window.matchMedia('(min-width: 1280px)').matches) { setPageSize(PAGE_SIZE); return }
+      const h = el.clientHeight
+      if (h > 0) setPageSize(Math.min(Math.max(Math.floor((h - 34) / 66), 4), 30))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [loading, activeId])
+
   const openNew  = () => { setEditing(null); setShowModal(true) }
   const openEdit = (p) => { setEditing(p); setShowModal(true) }
   const onSaved  = async () => { setShowModal(false); await load() }
@@ -1125,9 +1157,9 @@ export default function AuftraegePage({ articles, setArticles }) {
       inZeitraum(p)
   })
 
-  const pageCount = Math.max(Math.ceil(filtered.length / PAGE_SIZE), 1)
+  const pageCount = Math.max(Math.ceil(filtered.length / pageSize), 1)
   const safePage  = Math.min(page, pageCount - 1)
-  const paged     = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+  const paged     = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
   const sel       = filtered.find(p => p.id === selId) ?? paged[0] ?? null
 
   /* ── headline stats ── */
@@ -1189,8 +1221,8 @@ export default function AuftraegePage({ articles, setArticles }) {
   }
 
   const TABS = ['alle', 'geplant', 'aktiv', 'pausiert', 'abgeschlossen', 'storniert']
-  const from = filtered.length === 0 ? 0 : safePage * PAGE_SIZE + 1
-  const to   = Math.min((safePage + 1) * PAGE_SIZE, filtered.length)
+  const from = filtered.length === 0 ? 0 : safePage * pageSize + 1
+  const to   = Math.min((safePage + 1) * pageSize, filtered.length)
 
   const InfoRow = ({ label, children }) => (
     <div className="flex items-center justify-between gap-3">
@@ -1235,8 +1267,10 @@ export default function AuftraegePage({ articles, setArticles }) {
 
   return (
     <div className="p-3 sm:p-6 lg:p-8">
+    <div ref={pinRef} className="xl:flex xl:flex-col xl:overflow-hidden xl:h-[var(--tab-h)]"
+         style={{ '--tab-h': tabH ? `${tabH}px` : 'auto' }}>
       {/* ── header ── */}
-      <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
+      <div className="flex items-start justify-between mb-5 gap-3 flex-wrap xl:shrink-0">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('auf_title')}</h1>
           <p className="text-secondary text-sm">{t('auf_subtitle')}</p>
@@ -1249,7 +1283,7 @@ export default function AuftraegePage({ articles, setArticles }) {
       </div>
 
       {/* ── stat cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3 mb-4 xl:shrink-0">
         <AufStatMini label={t('ad_active_projects')} value={aktiveCount} icon="box" color="#4a90d9"
                      spark={sparkSeries.aktive} {...countSub(sparkSeries.aktive)} />
         <AufStatMini label={t('ad_late')} value={kasneCount} icon="alarm" color="#e0524a"
@@ -1263,11 +1297,11 @@ export default function AuftraegePage({ articles, setArticles }) {
                      spark={sparkSeries.marge} {...pointSub(sparkSeries.marge)} />
       </div>
 
-      <div className="flex flex-col xl:flex-row gap-4 items-start">
+      <div className="flex flex-col xl:flex-row gap-4 xl:flex-1 xl:min-h-0">
         {/* ══ MAIN COLUMN ══ */}
-        <div className="flex-1 min-w-0 w-full">
+        <div className="flex-1 min-w-0 w-full flex flex-col xl:min-h-0">
           {/* filter bar */}
-          <Card className="p-3 flex flex-wrap gap-2 items-center mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <Card className="p-3 flex flex-wrap gap-2 items-center mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
             <div className="relative flex-1 min-w-[160px]">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
                 <Icon name="search" size={13} color="#6b7480" />
@@ -1293,19 +1327,19 @@ export default function AuftraegePage({ articles, setArticles }) {
               <option value="jahr">{t('auf_zeitraum_jahr')}</option>
             </select>
             <div className="hidden lg:flex items-center gap-1 bg-bg-2 border border-border rounded-xl p-1">
-              <button onClick={() => setView('karten')} title="Karten"
-                      className={`p-1.5 rounded-lg transition-colors ${view === 'karten' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
-                <Icon name="grid" size={14} color="currentColor" />
-              </button>
               <button onClick={() => setView('tabelle')} title="Tabelle"
                       className={`p-1.5 rounded-lg transition-colors ${view === 'tabelle' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
                 <Icon name="list" size={14} color="currentColor" />
               </button>
+              <button onClick={() => setView('karten')} title="Karten"
+                      className={`p-1.5 rounded-lg transition-colors ${view === 'karten' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+                <Icon name="grid" size={14} color="currentColor" />
+              </button>
             </div>
           </Card>
 
-          {/* projects table */}
-          <Card className="overflow-hidden mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          {/* projects table — grows to fill down to the Schnellstatistik */}
+          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col xl:min-h-0">
             <div className="flex gap-1 px-3 border-b border-border overflow-x-auto">
               {TABS.map(k => (
                 <button key={k} onClick={() => setTab(k)}
@@ -1328,7 +1362,7 @@ export default function AuftraegePage({ articles, setArticles }) {
                   <>
                     {/* card fallback on small screens */}
                     <div className="lg:hidden">{cardGrid()}</div>
-                    <div className="hidden lg:block overflow-x-auto">
+                    <div ref={tableBoxRef} className="hidden lg:block overflow-x-auto flex-1 xl:min-h-0 xl:overflow-y-hidden">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
@@ -1349,7 +1383,7 @@ export default function AuftraegePage({ articles, setArticles }) {
                             const gr = p.status === 'abgeschlossen' ? realGewinn(p) : null
                             const isSel = sel?.id === p.id
                             return (
-                              <tr key={p.id} onClick={() => setSelId(p.id)}
+                              <tr key={p.id} onClick={() => { setSelId(p.id); setActiveId(p.id) }}
                                   className={`border-b border-border last:border-0 cursor-pointer transition-colors ${isSel ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
                                 <td className="px-4 py-3" style={{ borderLeft: `3px solid ${m.color}` }}>
                                   <div className="font-medium">{p.name}</div>
@@ -1379,10 +1413,6 @@ export default function AuftraegePage({ articles, setArticles }) {
                                 </td>
                                 <td className="px-4 py-3">
                                   <div className="flex items-center justify-end gap-1">
-                                    <button onClick={e => { e.stopPropagation(); setSelId(p.id); setActiveId(p.id) }}
-                                            title={t('auf_act_open')} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
-                                      <Icon name="eye" size={14} color="#9aa3ad" />
-                                    </button>
                                     <button onClick={e => { e.stopPropagation(); openEdit(p) }}
                                             title={t('common_edit')} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
                                       <Icon name="edit" size={14} color="#9aa3ad" />
@@ -1429,8 +1459,9 @@ export default function AuftraegePage({ articles, setArticles }) {
           </Card>
         </div>
 
-        {/* ══ RIGHT PANEL ══ */}
-        <div className="w-full xl:w-80 shrink-0 space-y-4">
+        {/* ══ RIGHT PANEL — scrolls internally on xl if it outgrows the
+            pinned height ══ */}
+        <div className="w-full xl:w-80 shrink-0 space-y-4 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
           {sel ? (
             <>
               {/* Projektübersicht */}
@@ -1546,7 +1577,7 @@ export default function AuftraegePage({ articles, setArticles }) {
       </div>
 
       {/* ── Schnellstatistik ── */}
-      <Card className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <Card className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
         <h3 className="font-semibold text-sm mb-3">{t('auf_schnellstat')}</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-x-4 gap-y-3">
           {[
@@ -1565,6 +1596,8 @@ export default function AuftraegePage({ articles, setArticles }) {
           ))}
         </div>
       </Card>
+
+    </div>
 
       {showModal && (
         <ProjektFormModal projekt={editing} users={users} onClose={() => setShowModal(false)} onSaved={onSaved} />

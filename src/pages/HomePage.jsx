@@ -533,7 +533,9 @@ export default function HomePage({ articles = [], moves = [] }) {
                   </div>
                   <div className="text-lg font-bold font-mono"><CountUp value={aktiveProjekte} /></div>
                 </Card>
-                <Card className="p-3 cursor-pointer" onClick={() => navigate('/auftraege')}>
+                {/* Not clickable — it would lead to the same page as
+                    "Aktive Projekte" right next to it. */}
+                <Card className="p-3">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs text-secondary">{t('home_expected_profit')}</span>
                     <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: '#d96b8f1a' }}>
@@ -633,7 +635,7 @@ export default function HomePage({ articles = [], moves = [] }) {
                         spark={kennzahlenSeries.map(s => s.offene_bestellungen)} trend={trendFor(kennzahlenSeries, 'offene_bestellungen')} trendMode="abs" />
               <StatCard label={t('home_active_projects')} value={aktiveProjekte} icon="clipboard" color="#4a90d9" onClick={() => navigate('/auftraege')}
                         spark={kennzahlenSeries.map(s => s.aktive_projekte)} trend={trendFor(kennzahlenSeries, 'aktive_projekte')} trendMode="abs" />
-              <StatCard label={t('home_expected_profit')} value={erwarteterGewinnAuftraege} format={fmt} icon="chart" color="#e8821c" onClick={() => navigate('/auftraege')}
+              <StatCard label={t('home_expected_profit')} value={erwarteterGewinnAuftraege} format={fmt} icon="chart" color="#e8821c"
                         spark={kennzahlenSeries.map(s => s.erwarteter_gewinn)} trend={trendFor(kennzahlenSeries, 'erwarteter_gewinn')} trendMode="pct" />
             </div>
 

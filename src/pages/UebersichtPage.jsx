@@ -332,6 +332,23 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
     printQrLabels(items)
   }
 
+  // Bulk delete of the selection (manager only) — movement history
+  // survives because warenbewegungen keeps the article name/number as
+  // text and its artikel_id is ON DELETE SET NULL.
+  const [confirmBulkDel, setConfirmBulkDel] = useState(false)
+  const [bulkDeleting, setBulkDeleting]     = useState(false)
+  useEffect(() => { if (!selectMode) setConfirmBulkDel(false) }, [selectMode])
+  const deleteSelected = async () => {
+    setBulkDeleting(true)
+    await supabase.from('artikel').delete().in('id', [...selected])
+    setBulkDeleting(false)
+    setConfirmBulkDel(false)
+    setSelectMode(false)
+    setSelected(new Set())
+    const { data } = await supabase.from('artikel').select('*').order('nummer')
+    if (data) setArticles(data)
+  }
+
   const openNew  = () => { setEditingArticle(null); setShowModal(true) }
   const openEdit = (a) => { setEditingArticle(a);   setShowModal(true) }
   const onSaved  = async () => {
@@ -498,6 +515,25 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                     style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
               <Icon name="printer" size={15} color="#181c20" /> {t('ueb_print_qr_labels')}
             </button>
+            {isManager && (
+              confirmBulkDel ? (
+                <>
+                  <button onClick={deleteSelected} disabled={bulkDeleting}
+                          className="bg-red text-white text-sm font-semibold px-3 py-2.5 rounded-xl disabled:opacity-60 shrink-0">
+                    {bulkDeleting ? '…' : t('common_yes')}
+                  </button>
+                  <button onClick={() => setConfirmBulkDel(false)}
+                          className="bg-bg-2 border border-border text-secondary text-sm px-3 py-2.5 rounded-xl shrink-0">
+                    {t('common_no')}
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => setConfirmBulkDel(true)} disabled={selected.size === 0}
+                        className="flex items-center justify-center p-2.5 rounded-xl bg-red text-white disabled:opacity-40 shrink-0">
+                  <Icon name="trash" size={15} color="#fff" />
+                </button>
+              )
+            )}
           </div>
         )}
       </div>
@@ -527,6 +563,26 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                         style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
                   <Icon name="printer" size={15} color="#181c20" /> {t('ueb_print_qr_labels')}
                 </button>
+                {isManager && (
+                  confirmBulkDel ? (
+                    <span className="flex items-center gap-2">
+                      <span className="text-red text-xs">{t('lief_really_delete')}</span>
+                      <button onClick={deleteSelected} disabled={bulkDeleting}
+                              className="bg-red text-white text-sm font-semibold px-3 py-2.5 rounded-xl disabled:opacity-60">
+                        {bulkDeleting ? '…' : t('common_yes')}
+                      </button>
+                      <button onClick={() => setConfirmBulkDel(false)}
+                              className="bg-bg-2 border border-border text-secondary text-sm px-3 py-2.5 rounded-xl">
+                        {t('common_no')}
+                      </button>
+                    </span>
+                  ) : (
+                    <button onClick={() => setConfirmBulkDel(true)} disabled={selected.size === 0}
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-red text-white disabled:opacity-40">
+                      <Icon name="trash" size={14} color="#fff" /> {t('common_delete')}
+                    </button>
+                  )
+                )}
                 <button onClick={toggleSelectMode}
                         className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-secondary">
                   <Icon name="x" size={14} color="#9aa3ad" /> {t('common_cancel')}

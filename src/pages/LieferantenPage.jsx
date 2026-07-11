@@ -326,7 +326,10 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
     const calc = () => {
       const el = rootRef.current
       if (!el) return
-      setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 28, 420))
+      // Reserve must cover the page's own bottom padding (lg:p-8 = 32px)
+      // plus a little slack — 28 was short of it, leaving a 1-2mm
+      // scroll "float" even though everything visually fit.
+      setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 44, 420))
     }
     calc()
     window.addEventListener('resize', calc)
@@ -556,8 +559,48 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
               <p className="p-8 text-center text-muted text-sm">{t('ueb_no_articles')}</p>
             ) : (
               <>
-                {/* compact list on small screens / Karten view */}
-                <div className={view === 'liste' ? 'p-3' : 'p-3 lg:hidden'}>{compactList}</div>
+                {/* compact list on small screens */}
+                <div className="p-3 lg:hidden">{compactList}</div>
+                {/* grid view: real article tiles with pictogram/photo —
+                    visually distinct from the table, scrolls internally */}
+                {view === 'liste' && (
+                  <div className="hidden lg:block flex-1 xl:min-h-0 xl:overflow-y-auto p-3">
+                    <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                      {paged.map((a, i) => {
+                        const st = artStatus(a)
+                        const lief = liefById.get(a.lieferant_id)
+                        return (
+                          <Card key={a.id} className="overflow-hidden flex flex-col animate-fade-up shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-border-strong transition-all"
+                                style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}>
+                            <div className="aspect-video overflow-hidden border-b border-border">
+                              <ArtikelBild artikel={a} iconSize={30} />
+                            </div>
+                            <div className="p-3 flex flex-col gap-1.5 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[11px] text-amber">{a.nummer}</span>
+                                <BestandBadge status={st} />
+                              </div>
+                              <div className="font-medium text-sm leading-tight truncate">{a.name}</div>
+                              <div className="text-[11px] text-muted truncate">
+                                {a.menge} {a.einheit} · {t('lief_min_short')} {a.mindestbestand}
+                                {a.lieferant ? ` · ${a.lieferant}` : ''}
+                              </div>
+                              <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
+                                <span>{lief?.lieferzeit || '—'}</span>
+                                <Sterne value={lief?.bewertung} />
+                              </div>
+                              <button onClick={() => onOpenAdd(a)}
+                                      className="mt-auto flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold"
+                                      style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                                <Icon name="plus" size={12} color="#181c20" /> {t('lief_order_button')}
+                              </button>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
                 {view === 'tabelle' && (
                   <div ref={tableBoxRef} className="hidden lg:block overflow-x-auto flex-1 xl:min-h-0 xl:overflow-y-hidden">
                     <table className="w-full text-sm">
@@ -1494,7 +1537,7 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
   const [filterKat, setFilterKat]     = useState('alle')
   const [filterLand, setFilterLand]   = useState('alle')
   const [filterStatus, setFilterStatus] = useState('alle')
-  const [view, setView] = useState('karten')
+  const [view, setView] = useState('liste')
   // Multi-select for bulk deletion (works in both views).
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected]     = useState(new Set())
@@ -1633,13 +1676,13 @@ function LieferantenTab({ lieferanten, articles, bestellungen, onNewLieferant, o
           {Object.entries(LIEF_STATUS).map(([k, m]) => <option key={k} value={k}>{t(m.labelKey)}</option>)}
         </select>
         <div className="hidden lg:flex items-center gap-1 bg-bg-2 border border-border rounded-xl p-1">
-          <button onClick={() => setView('karten')} title="Karten"
-                  className={`p-1.5 rounded-lg transition-colors ${view === 'karten' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
-            <Icon name="grid" size={14} color="currentColor" />
-          </button>
           <button onClick={() => setView('liste')} title="Liste"
                   className={`p-1.5 rounded-lg transition-colors ${view === 'liste' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
             <Icon name="list" size={14} color="currentColor" />
+          </button>
+          <button onClick={() => setView('karten')} title="Karten"
+                  className={`p-1.5 rounded-lg transition-colors ${view === 'karten' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+            <Icon name="grid" size={14} color="currentColor" />
           </button>
         </div>
         <button onClick={() => selectMode ? exitSelect() : setSelectMode(true)}

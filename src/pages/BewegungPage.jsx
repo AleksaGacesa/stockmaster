@@ -622,7 +622,10 @@ function DesktopBuchen({ articles, onBooked, projekte, lieferantenInfo, reservie
     const calc = () => {
       const el = rootRef.current
       if (!el) return
-      setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 28, 420))
+      // Reserve must cover the page's own bottom padding (lg:p-8 = 32px)
+      // plus a little slack — 28 was short of it, leaving a 1-2mm
+      // scroll "float" even though everything visually fit.
+      setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 44, 420))
     }
     calc()
     window.addEventListener('resize', calc)
