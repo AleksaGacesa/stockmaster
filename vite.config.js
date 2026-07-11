@@ -23,6 +23,13 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // A new SW takes over immediately and drops every outdated
+        // precache — without this, rapid successive deploys could leave
+        // a stale index.html pointing at hashed assets that no longer
+        // exist on the server (net::ERR_ABORTED 404 on refresh).
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
