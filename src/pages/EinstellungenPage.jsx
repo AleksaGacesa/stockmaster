@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { supabaseAdmin } from '../lib/supabaseAdmin'
 import Card from '../components/Card'
 import Icon from '../components/Icon'
+import MapPicker from '../components/MapPicker'
 import { useLanguage } from '../hooks/useLanguage'
 
 function UserForm({ newName, setNewName, newEmail, setNewEmail, newPassword, setNewPassword,
@@ -176,6 +177,59 @@ function FirmaCard({ firma, setFirma, onSave, saving, msg }) {
   )
 }
 
+/* ══ FIRMEN-STANDORT (Zeiterfassung GPS check-in) ══ */
+function StandortCard({ firma, setFirma }) {
+  const { t } = useLanguage()
+  const [showMap, setShowMap] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const save = async (patch) => {
+    setSaving(true)
+    const next = { ...patch }
+    await supabase.from('firmendaten').update(next).eq('id', 1)
+    setFirma(f => ({ ...f, ...next }))
+    setSaving(false)
+    setMsg(t('set_company_data_saved')); setTimeout(() => setMsg(null), 3000)
+  }
+
+  return (
+    <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <h2 className="font-semibold mb-2 flex items-center gap-2">
+        <Icon name="mapPin" size={16} color="#e8821c" /> {t('set_standort_titel')}
+      </h2>
+      <p className="text-xs text-secondary mb-3">{t('set_standort_desc')}</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => setShowMap(true)}
+                className="flex items-center gap-1.5 text-sm bg-bg-2 border border-border px-3 py-2 rounded-lg text-secondary hover:bg-bg-3 transition-colors">
+          <Icon name="mapPin" size={14} color="currentColor" />
+          {firma.firma_lat != null ? t('set_standort_change') : t('set_standort_pick')}
+        </button>
+        {firma.firma_lat != null && (
+          <>
+            <span className="text-[11px] font-mono text-muted">{Number(firma.firma_lat).toFixed(5)}, {Number(firma.firma_lng).toFixed(5)}</span>
+            <span className="flex items-center gap-1 text-[11px] text-muted">
+              {t('auf_standort_radius')}
+              <input type="number" min="30" step="10" value={firma.firma_radius ?? 120}
+                     onChange={e => setFirma(f => ({ ...f, firma_radius: e.target.value }))}
+                     onBlur={() => save({ firma_radius: Math.max(Number(firma.firma_radius) || 120, 30) })}
+                     className="w-16 bg-bg-2 border border-border rounded-lg px-2 py-1 text-xs font-mono text-right outline-none focus:border-amber" />
+              m
+            </span>
+          </>
+        )}
+        {saving && <span className="text-[11px] text-muted">…</span>}
+        {msg && <span className="text-[11px] text-green">{msg}</span>}
+      </div>
+      {showMap && (
+        <MapPicker lat={firma.firma_lat} lng={firma.firma_lng} radius={Number(firma.firma_radius) || 120}
+                   onPick={(lat, lng) => save({ firma_lat: lat, firma_lng: lng })}
+                   onClose={() => setShowMap(false)} />
+      )}
+    </Card>
+  )
+}
+
 export default function EinstellungenPage({ articles, moves, setArticles, setMoves }) {
   const { t } = useLanguage()
   const navigate = useNavigate()
@@ -316,6 +370,8 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
 
           <FirmaCard firma={firma} setFirma={setFirma} onSave={saveFirma} saving={firmaSaving} msg={firmaMsg} />
 
+          <StandortCard firma={firma} setFirma={setFirma} />
+
           {/* Export */}
           <Card className="p-4">
             <h2 className="font-semibold text-sm mb-3">{t('set_export_data')}</h2>
@@ -397,6 +453,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
 
           <div className="flex-[1_1_280px] space-y-4">
             <FirmaCard firma={firma} setFirma={setFirma} onSave={saveFirma} saving={firmaSaving} msg={firmaMsg} />
+            <StandortCard firma={firma} setFirma={setFirma} />
             <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
               <h2 className="font-semibold mb-2">{t('set_export_data')}</h2>
               <p className="text-xs text-secondary mb-4">{t('set_export_desc')}</p>

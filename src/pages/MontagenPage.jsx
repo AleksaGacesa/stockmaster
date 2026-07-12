@@ -9,8 +9,12 @@ import LiveDuration from '../components/LiveDuration'
 import CountUp from '../components/CountUp'
 import DonutChart from '../components/DonutChart'
 import { fmt, fmtDt } from '../lib/auftraegeHelpers'
+import {
+  montageFahrzeitMin as fahrzeitMin, montageArbeitMin as arbeitMin,
+  fmtMin, fmtH, distanzMeter, fmtDistanz,
+} from '../lib/montagenHelpers'
 
-/* ── status & time helpers ── */
+/* ── status & cost helpers ── */
 const MON_META = {
   unterwegs: { color: '#e8821c', icon: 'truck',    labelKey: 'mon_unterwegs' },
   arbeitet:  { color: '#4a90d9', icon: 'settings', labelKey: 'mon_arbeitet' },
@@ -26,25 +30,6 @@ const GRP_META = {
   geplant:       { labelKey: 'status_geplant',       color: '#9aa3ad' },
 }
 
-// Outbound drive, fixed once the worker taps "Angekommen".
-const fahrzeitMin = (m) => m.ankunft_at
-  ? Math.max((new Date(m.ankunft_at) - new Date(m.abfahrt_at)) / 60000, 0)
-  : null
-
-// Net working time (arrival → end/now, minus the reported break).
-const arbeitMin = (m) => {
-  if (!m.ankunft_at) return 0
-  const ende = m.ende_at ? new Date(m.ende_at) : new Date()
-  return Math.max((ende - new Date(m.ankunft_at)) / 60000 - Number(m.pause_min ?? 0), 0)
-}
-
-const fmtMin = (min) => {
-  if (min === null || min === undefined) return '—'
-  const v = Math.max(Math.round(min), 0)
-  const h = Math.floor(v / 60), mm = v % 60
-  return h > 0 ? `${h} Std ${mm} Min` : `${mm} Min`
-}
-const fmtH = (min) => min === null || min === undefined ? '—' : `${(min / 60).toFixed(1).replace('.', ',')} h`
 const fmtUhr = (d) => new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date(d))
 
 // Completed entries use the rates frozen at Feierabend; running ones
@@ -218,6 +203,10 @@ function MontageLive({ offen, montagen, onChanged }) {
   const [km, setKm] = useState('')
   const [fortschritt, setFortschritt] = useState(0)
   const [notiz, setNotiz] = useState('')
+  // Feierabend only ends the DAY — multi-day montages continue
+  // tomorrow. This explicit toggle is what marks the whole montage
+  // finished (progress jumps to 100%).
+  const [fertig, setFertig] = useState(false)
 
   const status = monStatus(offen)
   const meta = MON_META[status]
@@ -228,13 +217,29 @@ function MontageLive({ offen, montagen, onChanged }) {
     const letzte = montagen.find(m =>
       m.projekt_id === offen.projekt_id && m.ende_at && m.fortschritt !== null)
     setFortschritt(letzte?.fortschritt ?? 0)
-    setPause('0'); setKm(''); setNotiz('')
+    setPause('0'); setKm(''); setNotiz(''); setFertig(false)
     setFinishing(true)
   }
 
+  // Check-in: when the boss pinned the site on the map, the worker's
+  // GPS position and distance to the pin are stored as proof. Outside
+  // the radius (or GPS off) the check-in still goes through — the boss
+  // just sees it flagged; a hard block would strand workers with a
+  // weak signal on site.
   const angekommen = async () => {
     setBusy(true)
-    await supabase.from('montagen').update({ ankunft_at: new Date().toISOString() }).eq('id', offen.id)
+    const patch = { ankunft_at: new Date().toISOString() }
+    const st = offen.projekt
+    if (st?.standort_lat != null && navigator.geolocation) {
+      try {
+        const pos = await new Promise((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }))
+        patch.ankunft_lat = pos.coords.latitude
+        patch.ankunft_lng = pos.coords.longitude
+        patch.ankunft_distanz = distanzMeter(pos.coords.latitude, pos.coords.longitude, st.standort_lat, st.standort_lng)
+      } catch { /* GPS denied/timeout — allowed, stays unverified */ }
+    }
+    await supabase.from('montagen').update(patch).eq('id', offen.id)
     setBusy(false)
     onChanged()
   }
@@ -290,6 +295,23 @@ function MontageLive({ offen, montagen, onChanged }) {
         </div>
       </div>
 
+      {/* GPS check-in verdict, once arrived at a pinned site */}
+      {status === 'arbeitet' && offen.projekt?.standort_lat != null && (
+        offen.ankunft_distanz == null ? (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted mb-3 -mt-2">
+            <Icon name="mapPin" size={11} color="#9aa3ad" /> {t('mon_gps_none')}
+          </div>
+        ) : offen.ankunft_distanz <= (offen.projekt.standort_radius ?? 150) ? (
+          <div className="flex items-center gap-1.5 text-[11px] text-green mb-3 -mt-2">
+            <Icon name="check" size={11} color="rgb(var(--color-green))" /> {t('mon_gps_ok')} ({fmtDistanz(offen.ankunft_distanz)})
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-[11px] text-red mb-3 -mt-2">
+            <Icon name="alert" size={11} color="rgb(var(--color-red))" /> {fmtDistanz(offen.ankunft_distanz)} {t('mon_gps_entfernt')}
+          </div>
+        )
+      )}
+
       {!finishing ? (
         <div className="flex gap-2 flex-wrap">
           {status === 'unterwegs' && (
@@ -330,11 +352,30 @@ function MontageLive({ offen, montagen, onChanged }) {
               <label className="text-xs text-secondary">{t('mon_fortschritt')}</label>
               <span className="text-sm font-mono font-bold text-amber">{fortschritt}%</span>
             </div>
-            <input type="range" min="0" max="100" step="5" value={fortschritt}
+            <input type="range" min="0" max="100" step="5" value={fortschritt} disabled={fertig}
                    onChange={e => setFortschritt(Number(e.target.value))}
-                   className="w-full accent-[#e8821c]" />
-            <FortschrittBar pct={fortschritt} color="#e8821c" />
+                   className="w-full accent-[#e8821c] disabled:opacity-50" />
+            <FortschrittBar pct={fortschritt} color={fertig ? '#4caf6e' : '#e8821c'} />
           </div>
+          {/* End of day ≠ end of montage — this toggle is the explicit
+              "site is finished" for the last day. */}
+          <button type="button" onClick={() => {
+                    setFertig(f => {
+                      const next = !f
+                      if (next) setFortschritt(100)
+                      return next
+                    })
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm transition-all"
+                  style={fertig
+                    ? { background: 'var(--color-green-dim)', borderColor: 'rgb(var(--color-green))', color: 'rgb(var(--color-green))' }
+                    : { background: 'rgb(var(--bg-2))', borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>
+            <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
+              fertig ? 'bg-green border-green' : 'border-border-strong bg-bg-1'}`}>
+              {fertig && <Icon name="check" size={12} color="#fff" />}
+            </span>
+            {t('mon_fertig_frage')}
+          </button>
           <div>
             <label className="block text-xs text-secondary mb-1">{t('mon_notiz')}</label>
             <textarea value={notiz} onChange={e => setNotiz(e.target.value)} rows={2}
@@ -343,8 +384,9 @@ function MontageLive({ offen, montagen, onChanged }) {
           <div className="flex gap-2">
             <button onClick={abschliessen} disabled={busy}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                    style={{ background: '#4caf6e' }}>
-              <Icon name="check" size={15} color="#fff" /> {t('mon_abschliessen')}
+                    style={{ background: fertig ? '#4caf6e' : '#4a90d9' }}>
+              <Icon name="check" size={15} color="#fff" />
+              {fertig ? t('mon_abschliessen') : t('mon_feierabend_buchen')}
             </button>
             <button onClick={() => setFinishing(false)} disabled={busy}
                     className="px-4 py-3 rounded-xl text-sm text-secondary border border-border hover:bg-bg-2 transition-colors">
@@ -408,7 +450,7 @@ export default function MontagenPage() {
     const seit = new Date()
     seit.setMonth(seit.getMonth() - 6)
     const [{ data: mons }, { data: projs }, { data: profs }, { data: firma }, { data: mv }, { data: arts }] = await Promise.all([
-      supabase.from('montagen').select('*, projekt:projekte(id,name,kunde,dokument_nr)').order('abfahrt_at', { ascending: false }).limit(500),
+      supabase.from('montagen').select('*, projekt:projekte(id,name,kunde,dokument_nr,standort_lat,standort_lng,standort_radius)').order('abfahrt_at', { ascending: false }).limit(500),
       supabase.from('projekte').select('id,name,kunde,status,dokument_nr').in('status', ['aktiv', 'geplant']).order('name'),
       supabase.from('profiles').select('*').order('display_name'),
       supabase.from('firmendaten').select('km_satz').eq('id', 1).single(),
@@ -863,6 +905,19 @@ export default function MontagenPage() {
                                               : <MonStatusBadge status={st} />}
                                           </span>
                                           {Number(m.km) > 0 && <span className="font-mono text-muted whitespace-nowrap">{Number(m.km)} km</span>}
+                                          {m.ankunft_distanz != null && g.projekt?.standort_lat != null && (
+                                            m.ankunft_distanz > (g.projekt.standort_radius ?? 150) ? (
+                                              <span className="inline-flex items-center gap-1 text-red font-semibold whitespace-nowrap">
+                                                <Icon name="alert" size={11} color="rgb(var(--color-red))" />
+                                                {fmtDistanz(m.ankunft_distanz)} {t('mon_gps_entfernt')}
+                                              </span>
+                                            ) : (
+                                              <span className="inline-flex items-center gap-1 text-green whitespace-nowrap" title={t('mon_gps_ok')}>
+                                                <Icon name="mapPin" size={11} color="rgb(var(--color-green))" />
+                                                {fmtDistanz(m.ankunft_distanz)}
+                                              </span>
+                                            )
+                                          )}
                                           {m.notiz && <span className="text-muted truncate flex-1">{m.notiz}</span>}
                                           <span className="font-mono font-semibold ml-auto whitespace-nowrap">{fmt(monKosten(m, profMap, kmSatz))}</span>
                                           {confirmDelete === m.id ? (

@@ -23,7 +23,7 @@ function StatusBadge({ status }) {
 }
 
 /* ══ PROJECT DETAIL — read-only, no prices ══ */
-function ProjektDetail({ projekt, verbrauch, onBack }) {
+function ProjektDetail({ projekt, verbrauch, montagen, onBack }) {
   const { t } = useLanguage()
   const rows = (projekt.material ?? []).map(m => ({
     ...m, verbrauchtMenge: verbrauch[m.artikel_id] ?? 0,
@@ -31,8 +31,8 @@ function ProjektDetail({ projekt, verbrauch, onBack }) {
   const materialGeplant = rows.reduce((s, r) => s + r.geplant_menge, 0)
   const materialVerbraucht = rows.reduce((s, r) => s + r.verbrauchtMenge, 0)
   const fortschritt = materialGeplant > 0 ? Math.min(Math.round((materialVerbraucht / materialGeplant) * 100), 100) : 0
-  const arbeitsstunden = projektArbeitsstunden(projekt)
-  const aktivSeit = projektAktivSeit(projekt)
+  const arbeitsstunden = projektArbeitsstunden(projekt, montagen)
+  const aktivSeit = projektAktivSeit(montagen)
 
   return (
     <div className="p-3 sm:p-6 lg:p-8 max-w-2xl">
@@ -114,6 +114,7 @@ export default function WorkerProjectsPage() {
   const { t } = useLanguage()
   const [projekte, setProjekte] = useState([])
   const [verbrauchMap, setVerbrauchMap] = useState({})
+  const [monsBy, setMonsBy] = useState({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('offen')
@@ -121,9 +122,10 @@ export default function WorkerProjectsPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: p }, { data: moves }] = await Promise.all([
+    const [{ data: p }, { data: moves }, { data: mons }] = await Promise.all([
       supabase.from('projekte').select('*, material:projekt_material(*), zeiterfassung:projekt_zeiterfassung(*)').order('created_at', { ascending: false }),
       supabase.from('warenbewegungen').select('projekt_id, artikel_id, menge').eq('typ', 'ausgang').not('projekt_id', 'is', null),
+      supabase.from('montagen').select('projekt_id, abfahrt_at, ankunft_at, ende_at, pause_min'),
     ])
     setProjekte(p ?? [])
     const vm = {}
@@ -132,6 +134,9 @@ export default function WorkerProjectsPage() {
       vm[m.projekt_id][m.artikel_id] = (vm[m.projekt_id][m.artikel_id] ?? 0) + Number(m.menge)
     })
     setVerbrauchMap(vm)
+    const mb = {}
+    ;(mons ?? []).forEach(m => { (mb[m.projekt_id] = mb[m.projekt_id] ?? []).push(m) })
+    setMonsBy(mb)
     setLoading(false)
   }, [])
 
@@ -144,7 +149,8 @@ export default function WorkerProjectsPage() {
   )
 
   const active = projekte.find(p => p.id === activeId)
-  if (active) return <ProjektDetail projekt={active} verbrauch={verbrauchMap[active.id] ?? {}} onBack={() => setActiveId(null)} />
+  if (active) return <ProjektDetail projekt={active} verbrauch={verbrauchMap[active.id] ?? {}}
+                                     montagen={monsBy[active.id] ?? []} onBack={() => setActiveId(null)} />
 
   const q = search.toLowerCase()
   const filtered = projekte.filter(p =>
@@ -190,7 +196,7 @@ export default function WorkerProjectsPage() {
             const geplant = (p.material ?? []).reduce((s, m) => s + m.geplant_menge, 0)
             const verbraucht = (p.material ?? []).reduce((s, m) => s + (vb[m.artikel_id] ?? 0), 0)
             const pct = geplant > 0 ? Math.min(Math.round((verbraucht / geplant) * 100), 100) : 0
-            const aktivSeit = projektAktivSeit(p)
+            const aktivSeit = projektAktivSeit(monsBy[p.id])
             return (
               <Card key={p.id} className="p-4 cursor-pointer" onClick={() => setActiveId(p.id)}>
                 <div className="flex items-start justify-between mb-2 gap-2">

@@ -341,6 +341,7 @@ export default function DashboardPage({ articles, moves }) {
 
   const [projekte, setProjekte] = useState([])
   const [verbrauchMap, setVerbrauchMap] = useState({})
+  const [monsBy, setMonsBy] = useState({})
   const [loadingAuftraege, setLoadingAuftraege] = useState(true)
 
   const loadBestellungenData = useCallback(async () => {
@@ -356,9 +357,11 @@ export default function DashboardPage({ articles, moves }) {
   }, [])
 
   const loadAuftraegeData = useCallback(async () => {
-    const [{ data: p }, { data: moves }] = await Promise.all([
+    const [{ data: p }, { data: moves }, { data: mons }] = await Promise.all([
       supabase.from('projekte').select('*, material:projekt_material(*), zeiterfassung:projekt_zeiterfassung(*)').order('created_at', { ascending: false }),
       supabase.from('warenbewegungen').select('projekt_id, artikel_id, menge').eq('typ', 'ausgang').not('projekt_id', 'is', null),
+      supabase.from('montagen')
+        .select('projekt_id, abfahrt_at, ankunft_at, ende_at, pause_min, km, stundensatz, km_satz'),
     ])
     if (p) setProjekte(p)
     const vm = {}
@@ -367,6 +370,9 @@ export default function DashboardPage({ articles, moves }) {
       vm[m.projekt_id][m.artikel_id] = (vm[m.projekt_id][m.artikel_id] ?? 0) + Number(m.menge)
     })
     setVerbrauchMap(vm)
+    const mb = {}
+    ;(mons ?? []).forEach(m => { (mb[m.projekt_id] = mb[m.projekt_id] ?? []).push(m) })
+    setMonsBy(mb)
     setLoadingAuftraege(false)
   }, [])
 
@@ -443,7 +449,7 @@ export default function DashboardPage({ articles, moves }) {
             ) : (
               <AuftraegeDashboard
                 projekte={projekte} verbrauchMap={verbrauchMap} articles={articles}
-                onOpenProjekt={jumpToProjekt}
+                monsBy={monsBy} onOpenProjekt={jumpToProjekt}
               />
             )
           )}

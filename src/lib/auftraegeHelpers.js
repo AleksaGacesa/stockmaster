@@ -1,5 +1,6 @@
 // Shared by AuftraegePage and the Dashboard's Aufträge face — pure
 // data helpers, no JSX, so both can import cheaply.
+import { montageMinuten, montageKosten } from './montagenHelpers'
 
 export const fmt   = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n)
 export const fmtDt = (d) => new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(d))
@@ -17,32 +18,39 @@ export const isSpaet = (p) => p.rok && isOffen(p.status) && new Date(p.rok) < ne
 
 export const materialGeplantWert = (p) => (p.material ?? []).reduce((s, m) => s + m.geplant_menge * m.preis, 0)
 
-// The clock only runs while a project is "Aktiv" — each row in
-// zeiterfassung is one uninterrupted stretch at a fixed headcount. A
-// currently-running stretch (ended_at null) counts up to now().
+// ── LEGACY crew clock (projekt_zeiterfassung) ──
+// Replaced by the per-worker Montagen punch clock: the old clock ran
+// 24h/day while a project was "Aktiv", which inflated labor costs.
+// It survives only as a FALLBACK for projects finished before the
+// Montagen rework (segments exist, montage entries don't).
 const segmentStundenRoh = (seg) => {
   const start = new Date(seg.started_at)
   const end = seg.ended_at ? new Date(seg.ended_at) : new Date()
   return Math.max((end - start) / 3600000, 0)
 }
-
-// Man-hours (elapsed × Anzahl Arbeiter) — a raw effort metric, shown
-// on the stat card so "3 Leute für 2 Std." reads as 6 Arbeitsstunden.
-export const projektArbeitsstunden = (p) => (p.zeiterfassung ?? []).reduce(
+const legacyArbeitsstunden = (p) => (p.zeiterfassung ?? []).reduce(
   (sum, seg) => sum + segmentStundenRoh(seg) * (seg.arbeiter_anzahl ?? 1), 0
 )
-
-// projekt.stundensatz holds the CURRENT combined €/h of the whole
-// crew (sum of each worker's own rate, entered individually in the
-// UI) — not a per-person rate. So cost is elapsed hours × that total,
-// with no extra multiplication by headcount (that's already baked
-// into the sum). Like the old flat-rate model, this uses today's
-// stundensatz for every past stretch too — there's no per-segment
-// snapshot column, so a rate change also (slightly) reshapes already-
-// logged history. Acceptable trade-off to avoid a schema change.
-export const projektArbeitskosten = (p) => projektElapsedStunden(p) * Number(p.stundensatz ?? 24)
-
 export const projektElapsedStunden = (p) => (p.zeiterfassung ?? []).reduce((sum, seg) => sum + segmentStundenRoh(seg), 0)
+const legacyArbeitskosten = (p) => projektElapsedStunden(p) * Number(p.stundensatz ?? 24)
+
+// ── Montagen-based labor (the real model) ──
+// `montagen` = this project's punch-clock entries. Only COMPLETED days
+// count: their hourly and km rates were frozen at Feierabend, so the
+// figures never shift retroactively.
+const beendeteMontagen = (montagen) => (montagen ?? []).filter(m => m.ende_at)
+
+export const projektArbeitsstunden = (p, montagen) => {
+  const done = beendeteMontagen(montagen)
+  if (done.length > 0) return done.reduce((s, m) => s + montageMinuten(m), 0) / 60
+  return legacyArbeitsstunden(p)
+}
+
+export const projektArbeitskosten = (p, montagen) => {
+  const done = beendeteMontagen(montagen)
+  if (done.length > 0) return done.reduce((s, m) => s + montageKosten(m), 0)
+  return (p.zeiterfassung ?? []).length > 0 ? legacyArbeitskosten(p) : 0
+}
 
 // Uses the labor cost frozen at project creation (geplante_arbeitskosten
 // — crew × weekly-hours target × weeks until deadline), not the live
@@ -53,14 +61,11 @@ export const projektElapsedStunden = (p) => (p.zeiterfassung ?? []).reduce((sum,
 export const projektGesamtkosten = (p) => materialGeplantWert(p) + Number(p.geplante_arbeitskosten ?? 0)
 export const projektGewinn = (p) => Number(p.verkaufspreis ?? 0) - projektGesamtkosten(p)
 
-export const offeneSegmente = (p) => (p.zeiterfassung ?? []).filter(s => !s.ended_at)
-export const offenesSegment = (p) => offeneSegmente(p)[0] ?? null
-
-// Earliest start among currently-open segments — feeds the live
-// ticking "Aktiv seit" clock. Null while nothing is running.
-export const projektAktivSeit = (p) => {
-  const offene = offeneSegmente(p)
-  return offene.length > 0 ? Math.min(...offene.map(s => new Date(s.started_at).getTime())) : null
+// Earliest departure among currently-RUNNING montagen of a project —
+// feeds the live "Im Einsatz seit" clock. Null while nobody is out.
+export const projektAktivSeit = (montagen) => {
+  const laufend = (montagen ?? []).filter(m => !m.ende_at)
+  return laufend.length > 0 ? Math.min(...laufend.map(m => new Date(m.abfahrt_at).getTime())) : null
 }
 
 export const fmtDauer = (ms) => {
@@ -73,23 +78,26 @@ export const fmtDauer = (ms) => {
   return `${minutes}Min`
 }
 
-// Wall-clock days from the first time this project ever went Aktiv
-// until it was Abgeschlossen (or until now, if it's still running) —
-// "how long did/does this project take", not labor-hours.
-export const projektLaufzeitTage = (p) => {
-  const segments = p.zeiterfassung ?? []
-  if (segments.length === 0) return null
-  const earliest = Math.min(...segments.map(s => new Date(s.started_at).getTime()))
+// Wall-clock days from the first montage day (or, for legacy projects,
+// the first crew-clock segment) until Abgeschlossen/now — "how long
+// did/does this project take", not labor-hours.
+export const projektLaufzeitTage = (p, montagen) => {
+  const starts = [
+    ...(montagen ?? []).map(m => new Date(m.abfahrt_at).getTime()),
+    ...(p.zeiterfassung ?? []).map(s => new Date(s.started_at).getTime()),
+  ]
+  if (starts.length === 0) return null
   const end = p.abgeschlossen_at ? new Date(p.abgeschlossen_at).getTime() : Date.now()
-  return Math.max((end - earliest) / 86400000, 0)
+  return Math.max((end - Math.min(...starts)) / 86400000, 0)
 }
 
 // Average profit margin (%) across finished projects with a sale
 // price — a quick "are we pricing jobs right" health check.
-export const durchschnittGewinnmarge = (projekte, verbrauchMap, articles) => {
+export const durchschnittGewinnmarge = (projekte, verbrauchMap, articles, montagenByProjekt = {}) => {
   const done = projekte.filter(p => p.status === 'abgeschlossen' && Number(p.verkaufspreis) > 0)
   if (done.length === 0) return null
-  const margins = done.map(p => (projektRealisierterGewinn(p, verbrauchMap, articles) / Number(p.verkaufspreis)) * 100)
+  const margins = done.map(p =>
+    (projektRealisierterGewinn(p, verbrauchMap, articles, montagenByProjekt[p.id]) / Number(p.verkaufspreis)) * 100)
   return margins.reduce((s, m) => s + m, 0) / margins.length
 }
 
@@ -99,14 +107,14 @@ export const durchschnittGewinnmarge = (projekte, verbrauchMap, articles) => {
 // "real" since it comes from actual elapsed time. Falls back to the
 // article's current price for material that was never explicitly
 // planned.
-export const projektRealisierterGewinn = (p, verbrauchMap, articles) => {
+export const projektRealisierterGewinn = (p, verbrauchMap, articles, montagen) => {
   const vb = verbrauchMap[p.id] ?? {}
   const materialIstWert = Object.entries(vb).reduce((s, [artikelId, menge]) => {
     const line = (p.material ?? []).find(m => m.artikel_id === Number(artikelId))
     const preis = line ? line.preis : (articles.find(a => a.id === Number(artikelId))?.preis ?? 0)
     return s + menge * preis
   }, 0)
-  return Number(p.verkaufspreis ?? 0) - materialIstWert - projektArbeitskosten(p)
+  return Number(p.verkaufspreis ?? 0) - materialIstWert - projektArbeitskosten(p, montagen)
 }
 
 // For every artikel_id: how much is still "spoken for" by OPEN

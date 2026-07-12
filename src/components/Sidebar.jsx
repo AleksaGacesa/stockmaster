@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/lieferanten',  labelKey: 'nav_lieferanten', icon: 'building', managerOnly: true },
   { to: '/auftraege',    labelKey: 'nav_auftraege',   icon: 'clipboard', managerOnly: true },
   { to: '/montagen',     labelKey: 'nav_montagen',    icon: 'mapPin' },
+  { to: '/zeiterfassung',labelKey: 'nav_zeiterfassung', icon: 'clock' },
   { to: '/projekte',     labelKey: 'nav_projekte',    icon: 'clipboard', plainWorkerOnly: true },
   { to: '/inventur',     labelKey: 'nav_inventur',    icon: 'filter' },
   { to: '/dashboard',    labelKey: 'nav_dashboard',   icon: 'chart',    managerOnly: true },

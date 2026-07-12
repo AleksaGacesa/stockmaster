@@ -11,24 +11,24 @@ import {
   durchschnittGewinnmarge, projektAktivSeit,
 } from '../lib/auftraegeHelpers'
 
-export default function AuftraegeDashboard({ projekte, verbrauchMap, articles, onOpenProjekt }) {
+export default function AuftraegeDashboard({ projekte, verbrauchMap, articles, monsBy = {}, onOpenProjekt }) {
   const { t } = useLanguage()
   const aktiveCount = projekte.filter(p => p.status === 'aktiv').length
   const kasneCount  = projekte.filter(isSpaet).length
-  const realGewinn  = (p) => projektRealisierterGewinn(p, verbrauchMap, articles)
+  const realGewinn  = (p) => projektRealisierterGewinn(p, verbrauchMap, articles, monsBy[p.id])
 
   const erwarteterGewinn   = projekte.filter(p => isOffen(p.status)).reduce((s, p) => s + projektGewinn(p), 0)
   const realisierterGewinn = projekte.filter(p => p.status === 'abgeschlossen').reduce((s, p) => s + realGewinn(p), 0)
-  const gewinnmarge = durchschnittGewinnmarge(projekte, verbrauchMap, articles)
+  const gewinnmarge = durchschnittGewinnmarge(projekte, verbrauchMap, articles, monsBy)
 
-  // Projects with a clock actually running right now — each gets its
-  // own live, second-by-second ticking stopwatch.
+  // Projects with someone actually out on a montage right now — each
+  // gets its own live, second-by-second ticking stopwatch.
   const liveProjekte = useMemo(() =>
     projekte
-      .map(p => ({ p, seit: projektAktivSeit(p) }))
+      .map(p => ({ p, seit: projektAktivSeit(monsBy[p.id]) }))
       .filter(x => x.seit !== null)
       .sort((a, b) => a.seit - b.seit)
-  , [projekte])
+  , [projekte, monsBy])
 
   const anstehendeFristen = useMemo(() =>
     projekte
@@ -64,11 +64,11 @@ export default function AuftraegeDashboard({ projekte, verbrauchMap, articles, o
   // has ever run for show up here.
   const laufzeiten = useMemo(() => {
     return projekte
-      .map(p => ({ p, tage: projektLaufzeitTage(p) }))
+      .map(p => ({ p, tage: projektLaufzeitTage(p, monsBy[p.id]) }))
       .filter(x => x.tage !== null)
       .sort((a, b) => b.tage - a.tage)
       .slice(0, 7)
-  }, [projekte])
+  }, [projekte, monsBy])
   const maxLaufzeit = Math.max(...laufzeiten.map(x => x.tage), 1)
 
   return (

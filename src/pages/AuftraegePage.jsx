@@ -12,9 +12,11 @@ import { useLanguage } from '../hooks/useLanguage'
 import {
   fmt, fmtDt, STATUS_META, isOffen, isSpaet, materialGeplantWert,
   projektGewinn, projektRealisierterGewinn, buildReservierungMap,
-  projektArbeitsstunden, projektElapsedStunden, projektArbeitskosten, offeneSegmente,
+  projektArbeitsstunden, projektArbeitskosten, projektAktivSeit,
   durchschnittGewinnmarge, projektLaufzeitTage,
 } from '../lib/auftraegeHelpers'
+import { montageMinuten, montageKosten, fmtMin } from '../lib/montagenHelpers'
+import MapPicker from '../components/MapPicker'
 import { STATUS_META as BESTELLUNG_STATUS_META, bestellungTotal } from '../lib/bestellungHelpers'
 
 // Built from `t` since the labels need to react to the language toggle.
@@ -38,44 +40,8 @@ function StatusBadge({ status }) {
   )
 }
 
-/* ══ WORKER RATE CHIPS — reused by ProjektFormModal (new project,
-   local-only until saved) and ProjektDetail (live, persists to DB
-   on every change) via the onAdd/onRemove/onRateChange/onRateCommit
-   callbacks each caller wires up differently ══ */
-function WorkerRateChips({ rates, onAdd, onRemove, onRateChange, onRateCommit, disabled }) {
-  const { t } = useLanguage()
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {rates.map((rate, idx) => (
-        <div key={idx}
-             className="flex items-center gap-1.5 bg-gradient-to-br from-bg-2 to-bg-3 border border-border rounded-full pl-1 pr-2 py-1 shadow-sm hover:border-amber/50 transition-colors">
-          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-bg-1 shrink-0"
-                style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)' }}>
-            {idx + 1}
-          </span>
-          <input type="number" min="0" value={rate} disabled={disabled}
-                 onChange={e => onRateChange(idx, e.target.value)}
-                 onBlur={onRateCommit}
-                 className="w-12 bg-transparent text-sm font-mono font-semibold outline-none disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-          <span className="text-[10px] text-muted">€/h</span>
-          <button onClick={() => onRemove(idx)} disabled={disabled}
-                  className="w-4 h-4 rounded-full flex items-center justify-center text-muted hover:text-red hover:bg-red-dim transition-colors disabled:opacity-60">
-            <Icon name="x" size={10} color="currentColor" />
-          </button>
-        </div>
-      ))}
-      <button onClick={onAdd} disabled={disabled}
-              className="flex items-center gap-1 text-xs text-secondary hover:text-amber hover:border-amber/50 border border-dashed border-border rounded-full px-3 py-1.5 transition-colors disabled:opacity-60">
-        <Icon name="plus" size={11} color="currentColor" /> {t('auf_worker_add')}
-      </button>
-      {rates.length > 0 && (
-        <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-dim text-amber">
-          {t('auf_total_short')} {fmt(rates.reduce((s, r) => s + (Number(r) || 0), 0))}/h
-        </span>
-      )}
-    </div>
-  )
-}
+/* Worker rates now live on profiles (Montagen page) — the old
+   per-project WorkerRateChips are gone with the crew clock. */
 
 /* ══ PROJEKT FORM MODAL ══ */
 function ProjektFormModal({ projekt, users, onClose, onSaved }) {
@@ -91,12 +57,13 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  // Only meaningful for a NEW project — these seed the crew's combined
-  // rate and, together with the deadline, let a real "Geplant" labor
-  // cost be computed once and frozen (see save() below). Editing an
-  // existing project's crew still goes through the live chips in
-  // ProjektDetail, which never touch the frozen columns.
-  const [newWorkerRates, setNewWorkerRates] = useState([])
+  const [showMap, setShowMap] = useState(false)
+  // Crew size for a NEW project. Rates are no longer entered here —
+  // each worker's €/h lives on their profile (maintained on the
+  // Montagen page); the plan uses their average.
+  const [anzahlArbeiter, setAnzahlArbeiter] = useState(projekt?.geplante_arbeiter_anzahl ?? 2)
+  const satzList = users.map(u => Number(u.stundensatz)).filter(v => v > 0)
+  const avgSatz = satzList.length ? satzList.reduce((s, v) => s + v, 0) / satzList.length : 25
 
   const up = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -111,11 +78,14 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
       verantwortlich_name: verantwortlich?.display_name ?? '',
       verkaufspreis: Number(form.verkaufspreis) || 0,
       notiz: form.notiz.trim(),
+      standort_lat: form.standort_lat ?? null,
+      standort_lng: form.standort_lng ?? null,
+      standort_radius: Math.max(Number(form.standort_radius) || 150, 20),
     }
     let err
     if (isNew) {
       const stundenProWoche = Number(form.arbeitsstunden_pro_woche) || 40
-      const stundensatz = newWorkerRates.reduce((s, r) => s + (Number(r) || 0), 0)
+      const stundensatz = Math.max(Number(anzahlArbeiter) || 0, 0) * avgSatz
       // Weeks between the planned START (not "now", which could be
       // long before work actually begins for a job quoted in advance)
       // and the deadline — using "now" here inflated the plan with
@@ -126,7 +96,7 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
         ...data,
         erstellt_von: profile?.display_name ?? '', erstellt_von_id: profile?.id ?? null,
         stundensatz, arbeitsstunden_pro_woche: stundenProWoche,
-        geplante_arbeiter_anzahl: newWorkerRates.length, geplante_wochen: geplanteWochen,
+        geplante_arbeiter_anzahl: Math.max(Number(anzahlArbeiter) || 0, 0), geplante_wochen: geplanteWochen,
         geplante_stundensatz: stundensatz, geplante_arbeitskosten: stundensatz * stundenProWoche * geplanteWochen,
       }))
     } else {
@@ -219,18 +189,56 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
                      className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
             </div>
             {isNew && (
-              <div className="sm:col-span-2">
-                <label className="block text-xs text-secondary mb-1.5">{t('auf_worker_label')}</label>
-                <WorkerRateChips rates={newWorkerRates}
-                  onAdd={() => setNewWorkerRates(r => [...r, r.length ? r[r.length - 1] : 20])}
-                  onRemove={(idx) => setNewWorkerRates(r => r.filter((_, i) => i !== idx))}
-                  onRateChange={(idx, v) => setNewWorkerRates(r => r.map((x, i) => i === idx ? v : x))}
-                  onRateCommit={() => {}} />
-                <p className="text-[11px] text-muted mt-1.5">{t('auf_new_crew_hint')}</p>
+              <div>
+                <label className="block text-xs text-secondary mb-1">{t('auf_field_crew_size')}</label>
+                <input type="number" min="0" value={anzahlArbeiter}
+                       onChange={e => setAnzahlArbeiter(e.target.value)}
+                       className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
+                <p className="text-[11px] text-muted mt-1">
+                  {anzahlArbeiter || 0} × Ø {fmt(avgSatz)}/h — {t('auf_crew_rates_hint')}
+                </p>
               </div>
             )}
+            {/* ── Montage-Standort (GPS check-in target) ── */}
+            <div className="sm:col-span-2 border-t border-border pt-3">
+              <label className="block text-xs text-secondary mb-1.5 flex items-center gap-1.5">
+                <Icon name="mapPin" size={13} color="#e8821c" /> {t('auf_field_standort')}
+              </label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button type="button" onClick={() => setShowMap(true)}
+                        className="flex items-center gap-1.5 text-xs bg-bg-2 border border-border px-3 py-2 rounded-lg text-secondary hover:bg-bg-3 transition-colors">
+                  <Icon name="mapPin" size={13} color="currentColor" />
+                  {form.standort_lat != null ? t('auf_standort_change') : t('auf_standort_pick')}
+                </button>
+                {form.standort_lat != null && (
+                  <>
+                    <span className="text-[11px] font-mono text-muted">
+                      {Number(form.standort_lat).toFixed(5)}, {Number(form.standort_lng).toFixed(5)}
+                    </span>
+                    <span className="flex items-center gap-1 text-[11px] text-muted">
+                      {t('auf_standort_radius')}
+                      <input type="number" min="20" step="10" value={form.standort_radius ?? 150}
+                             onChange={e => up('standort_radius', e.target.value)}
+                             className="w-16 bg-bg-2 border border-border rounded-lg px-2 py-1 text-xs font-mono text-right outline-none focus:border-amber" />
+                      m
+                    </span>
+                    <button type="button" onClick={() => { up('standort_lat', null); up('standort_lng', null) }}
+                            className="text-[11px] text-muted hover:text-red">
+                      {t('set_remove')}
+                    </button>
+                  </>
+                )}
+              </div>
+              <p className="text-[11px] text-muted mt-1.5">{t('auf_standort_hint')}</p>
+            </div>
           </div>
           {error && <p className="text-red text-xs">{error}</p>}
+          {showMap && (
+            <MapPicker lat={form.standort_lat} lng={form.standort_lng}
+                       radius={Number(form.standort_radius) || 150}
+                       onPick={(lat, lng) => { up('standort_lat', lat); up('standort_lng', lng) }}
+                       onClose={() => setShowMap(false)} />
+          )}
         </div>
         <div className="flex items-center gap-3 px-5 pb-6 flex-wrap">
           <button onClick={save} disabled={saving}
@@ -415,25 +423,9 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
   const navigate = useNavigate()
   const [confirmStatus, setConfirmStatus] = useState(null) // status pending confirmation, or null
   const [statusBusy, setStatusBusy]       = useState(false)
-  const [arbeiterBusy, setArbeiterBusy]   = useState(false)
-  // Each entry is one worker's own €/h. There's no DB column for a
-  // list of individual rates, so this lives client-side and its SUM
-  // is what actually gets persisted to projekt.stundensatz — the
-  // combined crew rate the cost calculation uses. On mount we can
-  // only recover the count + the total (not each person's original
-  // number), so we split the total evenly as a starting point.
-  const [workerRates, setWorkerRates] = useState(() => {
-    const seg = offeneSegmente(projekt)[0]
-    // Before the project's first zeiterfassung segment exists (e.g. a
-    // brand-new "geplant" project), fall back to the headcount frozen
-    // at creation so the chips — and therefore the first "Aktiv"
-    // activation's zeiterfassung insert — reflect the crew that was
-    // actually planned, not zero.
-    const count = seg?.arbeiter_anzahl ?? projekt.geplante_arbeiter_anzahl ?? 0
-    if (count === 0) return []
-    const per = Math.round((Number(projekt.stundensatz ?? 24) / count) * 100) / 100
-    return Array.from({ length: count }, () => per)
-  })
+  // This project's Montagen punch-clock entries — since the crew-clock
+  // rework they ARE the project's time tracking and labor cost source.
+  const [montagen, setMontagen]           = useState([])
 
   // What OTHER open projects have already claimed, so this project's
   // "fehlt im Lager" check doesn't count stock someone else is
@@ -460,15 +452,17 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: mat }, { data: moves }, { data: best }] = await Promise.all([
+    const [{ data: mat }, { data: moves }, { data: best }, { data: mons }] = await Promise.all([
       supabase.from('projekt_material').select('*').eq('projekt_id', projekt.id).order('created_at'),
       supabase.from('warenbewegungen').select('artikel_id, menge').eq('projekt_id', projekt.id).eq('typ', 'ausgang'),
       supabase.from('bestellungen')
         .select('*, lieferant:lieferanten(id,name), positionen:bestellung_positionen(*)')
         .eq('projekt_id', projekt.id).order('created_at'),
+      supabase.from('montagen').select('*').eq('projekt_id', projekt.id).order('abfahrt_at', { ascending: false }),
     ])
     if (mat) setMaterial(mat)
     if (best) setBestellungen(best)
+    setMontagen(mons ?? [])
     const vb = {}
     ;(moves ?? []).forEach(m => { vb[m.artikel_id] = (vb[m.artikel_id] ?? 0) + Number(m.menge) })
     setVerbrauch(vb)
@@ -492,27 +486,12 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
     await load()
   }
 
-  // Single place that handles every status transition. Leaving "Aktiv"
-  // closes whatever zeiterfassung stretch is still running — the
-  // clock only runs while a project is Aktiv. Crew composition itself
-  // is only ever changed via persistCrew below, never automatically
-  // here.
+  // Status changes are now purely organizational — no clock starts or
+  // stops here. Time (and labor cost) comes exclusively from the
+  // workers' own Montagen punch-ins.
   const changeStatus = async (newStatus) => {
     if (newStatus === projekt.status) { setConfirmStatus(null); return }
     setStatusBusy(true); setError(null)
-    const wasAktiv = projekt.status === 'aktiv'
-    const willBeAktiv = newStatus === 'aktiv'
-
-    if (wasAktiv && !willBeAktiv) {
-      await supabase.from('projekt_zeiterfassung')
-        .update({ ended_at: new Date().toISOString() })
-        .eq('projekt_id', projekt.id).is('ended_at', null)
-    }
-    if (!wasAktiv && willBeAktiv && workerRates.length > 0) {
-      await supabase.from('projekt_zeiterfassung')
-        .insert({ projekt_id: projekt.id, arbeiter_anzahl: workerRates.length })
-    }
-
     const patch = { status: newStatus }
     if (newStatus === 'abgeschlossen') patch.abgeschlossen_at = new Date().toISOString()
     else if (projekt.status === 'abgeschlossen') patch.abgeschlossen_at = null
@@ -522,41 +501,6 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
     if (err) { setError(err.message); return }
     onRefresh()
   }
-
-  // Whenever the crew list changes (someone added/removed, or a rate
-  // edited), the total €/h is written to projekt.stundensatz. While
-  // the project is Aktiv this also splits the running zeiterfassung
-  // stretch: close it now (so hours already worked keep the old
-  // headcount), then open a fresh one at the new count.
-  const persistCrew = async (rates) => {
-    setArbeiterBusy(true)
-    if (projekt.status === 'aktiv') {
-      await supabase.from('projekt_zeiterfassung')
-        .update({ ended_at: new Date().toISOString() })
-        .eq('projekt_id', projekt.id).is('ended_at', null)
-      if (rates.length > 0) {
-        await supabase.from('projekt_zeiterfassung')
-          .insert({ projekt_id: projekt.id, arbeiter_anzahl: rates.length })
-      }
-    }
-    const gesamt = rates.reduce((s, r) => s + (Number(r) || 0), 0)
-    await supabase.from('projekte').update({ stundensatz: gesamt }).eq('id', projekt.id)
-    setArbeiterBusy(false)
-    onRefresh()
-  }
-
-  const addWorker = () => {
-    const next = [...workerRates, workerRates.length ? workerRates[workerRates.length - 1] : 20]
-    setWorkerRates(next)
-    persistCrew(next)
-  }
-  const removeWorker = (idx) => {
-    const next = workerRates.filter((_, i) => i !== idx)
-    setWorkerRates(next)
-    persistCrew(next)
-  }
-  const changeRateLocal = (idx, value) => setWorkerRates(list => list.map((r, i) => i === idx ? value : r))
-  const commitRates = () => persistCrew(workerRates.map(r => Number(r) || 0))
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-64">
@@ -595,11 +539,10 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
   const materialFortschritt = materialGeplant > 0 ? Math.min(Math.round((materialVerbraucht / materialGeplant) * 100), 100) : 0
 
   const materialWert = rows.reduce((s, r) => s + r.geplant_menge * r.preis, 0)
-  const arbeitsstunden = projektArbeitsstunden(projekt)
-  const elapsedStunden = projektElapsedStunden(projekt)
-  // Live labor cost — actual elapsed time × the crew's CURRENT
-  // combined rate. Keeps ticking as work happens.
-  const arbeitskosten = projektArbeitskosten(projekt)
+  // Real labor from the Montagen punch clock (completed days, frozen
+  // rates). Legacy crew-clock projects fall back inside the helpers.
+  const arbeitsstunden = projektArbeitsstunden(projekt, montagen)
+  const arbeitskosten = projektArbeitskosten(projekt, montagen)
   // Geplant labor cost — frozen at project creation (initial crew ×
   // weekly-hours target × weeks until the deadline). Reducing the
   // crew later only changes projekt.stundensatz (live), never this,
@@ -615,10 +558,7 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
   const geplantLaborLabel = lang === 'en'
     ? `${(projekt.geplante_wochen ?? 0).toFixed(1)} wks × ${projekt.arbeitsstunden_pro_woche ?? 40}h/wk × ${fmt(projekt.geplante_stundensatz ?? 0)}`
     : `${(projekt.geplante_wochen ?? 0).toFixed(1)} Wochen × ${projekt.arbeitsstunden_pro_woche ?? 40}Std/Woche × ${fmt(projekt.geplante_stundensatz ?? 0)}`
-  const offene = offeneSegmente(projekt)
-  const aktivSeit = offene.length > 0
-    ? Math.min(...offene.map(s => new Date(s.started_at).getTime()))
-    : null
+  const aktivSeit = projektAktivSeit(montagen)
 
   // Only the artikel whose shortfall hasn't already been ordered (or
   // whose shortfall grew since) actually need a fresh Bestellung —
@@ -689,21 +629,11 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
           {projekt.status === 'abgeschlossen' && projekt.abgeschlossen_at && (
             <p className="text-xs text-green mt-1">{t('auf_completed_on')} {fmtDt(projekt.abgeschlossen_at)}</p>
           )}
-          <div className="mt-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Icon name="user" size={13} color="#6b7480" />
-              <span className="text-xs text-secondary">{t('auf_worker_label')}</span>
-            </div>
-            <WorkerRateChips rates={workerRates}
-              onAdd={addWorker} onRemove={removeWorker}
-              onRateChange={changeRateLocal} onRateCommit={commitRates}
-              disabled={arbeiterBusy} />
-            {aktivSeit && (
-              <p className="text-xs text-blue mt-2 flex items-center gap-1.5">
-                {t('auf_active_since')} <LiveDuration since={aktivSeit} color="#4a90d9" />
-              </p>
-            )}
-          </div>
+          {aktivSeit && (
+            <p className="text-xs text-blue mt-3 flex items-center gap-1.5">
+              {t('auf_active_since')} <LiveDuration since={aktivSeit} color="#4a90d9" />
+            </p>
+          )}
         </div>
         {confirmStatus ? (
           <div className="flex items-center gap-2 bg-bg-2 border border-border rounded-xl px-3 py-2 flex-wrap">
@@ -791,7 +721,7 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
               <span>{t('auf_material_costs')}</span><span className="font-mono">{fmt(materialLiveWert)}</span>
             </div>
             <div className="flex justify-between text-secondary">
-              <span>{t('auf_labor_costs')} ({elapsedStunden.toFixed(1)} {t('auf_hours_word')} × {fmt(projekt.stundensatz ?? 24)} {t('auf_crew_word')})</span>
+              <span>{t('auf_labor_costs')} ({arbeitsstunden.toFixed(1)} {t('auf_hours_word')} · Montagen)</span>
               <span className="font-mono">{fmt(arbeitskosten)}</span>
             </div>
             <div className="flex justify-between font-semibold border-t border-border pt-1.5">
@@ -814,6 +744,45 @@ function ProjektDetail({ projekt, articles, onBack, onRefresh, setArticles, alle
           <div className="h-full rounded-full transition-all duration-700"
                style={{ width: `${materialFortschritt}%`, background: materialFortschritt > 100 ? '#e0524a' : '#4a90d9' }} />
         </div>
+      </Card>
+
+      {/* ── Zeiterfassung = the project's Montagen days ── */}
+      <Card className="p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-medium text-sm flex items-center gap-2">
+            <Icon name="clock" size={15} color="#4a90d9" /> {t('auf_montagen_title')}
+          </h3>
+          <button onClick={() => navigate('/montagen')}
+                  className="text-xs text-amber flex items-center gap-1 hover:gap-1.5 transition-all">
+            {t('auf_montagen_all')} <Icon name="chevronRight" size={12} color="#e8821c" />
+          </button>
+        </div>
+        {montagen.length === 0 ? (
+          <p className="text-xs text-muted text-center py-4">{t('auf_montagen_none')}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {montagen.slice(0, 8).map(m => (
+              <div key={m.id} className="flex items-center gap-3 bg-bg-2 border border-border rounded-lg px-3 py-2 text-xs">
+                <span className="font-mono text-muted whitespace-nowrap">{fmtDt(m.datum)}</span>
+                <span className="font-medium truncate flex-1">{m.arbeiter_name || '—'}</span>
+                {!m.ende_at ? (
+                  <span className="text-blue flex items-center gap-1.5">
+                    <StatusDot color="#4a90d9" pulse size={6} /> {t('auf_montage_laufend')}
+                  </span>
+                ) : (
+                  <>
+                    <span className="font-mono text-secondary whitespace-nowrap">{fmtMin(montageMinuten(m))}</span>
+                    <span className="font-mono font-semibold whitespace-nowrap">{fmt(montageKosten(m))}</span>
+                  </>
+                )}
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-1.5 border-t border-border text-xs">
+              <span className="text-muted">{montagen.length} {t('mon_einsaetze')} · {arbeitsstunden.toFixed(1)} {t('auf_hours_word')}</span>
+              <span className="font-mono font-semibold">{fmt(arbeitskosten)}</span>
+            </div>
+          </div>
+        )}
       </Card>
 
       {fehlendeRows.length > 0 && (
@@ -1032,12 +1001,15 @@ export default function AuftraegePage({ articles, setArticles }) {
   const [editing, setEditing]     = useState(null)
   const [activeId, setActiveId]   = useState(null)
   const [verbrauchMap, setVerbrauchMap] = useState({}) // { [projektId]: { [artikelId]: mengeVerbraucht } }
+  const [monsBy, setMonsBy] = useState({})             // { [projektId]: montagen[] } — labor source
 
   const load = useCallback(async () => {
-    const [{ data: p }, { data: u }, { data: moves }] = await Promise.all([
+    const [{ data: p }, { data: u }, { data: moves }, { data: mons }] = await Promise.all([
       supabase.from('projekte').select('*, material:projekt_material(*), zeiterfassung:projekt_zeiterfassung(*)').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').order('display_name'),
       supabase.from('warenbewegungen').select('projekt_id, artikel_id, menge').eq('typ', 'ausgang').not('projekt_id', 'is', null),
+      supabase.from('montagen')
+        .select('projekt_id, abfahrt_at, ankunft_at, ende_at, pause_min, km, stundensatz, km_satz'),
     ])
     if (p) setProjekte(p)
     if (u) setUsers(u)
@@ -1047,6 +1019,9 @@ export default function AuftraegePage({ articles, setArticles }) {
       vm[m.projekt_id][m.artikel_id] = (vm[m.projekt_id][m.artikel_id] ?? 0) + Number(m.menge)
     })
     setVerbrauchMap(vm)
+    const mb = {}
+    ;(mons ?? []).forEach(m => { (mb[m.projekt_id] = mb[m.projekt_id] ?? []).push(m) })
+    setMonsBy(mb)
     setLoading(false)
   }, [])
 
@@ -1069,7 +1044,7 @@ export default function AuftraegePage({ articles, setArticles }) {
     const ends = []
     const nowD = new Date()
     for (let i = 5; i >= 0; i--) ends.push(new Date(nowD.getFullYear(), nowD.getMonth() - i + 1, 0, 23, 59, 59))
-    const rg = (p) => projektRealisierterGewinn(p, verbrauchMap, articles)
+    const rg = (p) => projektRealisierterGewinn(p, verbrauchMap, articles, monsBy[p.id])
     const open = (p, end) => new Date(p.created_at) <= end && p.status !== 'storniert' &&
       (!p.abgeschlossen_at || new Date(p.abgeschlossen_at) > end)
     const doneBy = (end) => projekte.filter(p => p.status === 'abgeschlossen' && p.abgeschlossen_at && new Date(p.abgeschlossen_at) <= end)
@@ -1084,7 +1059,7 @@ export default function AuftraegePage({ articles, setArticles }) {
         return done.reduce((s, p) => s + (rg(p) / Number(p.verkaufspreis)) * 100, 0) / done.length
       }),
     }
-  }, [projekte, verbrauchMap, articles])
+  }, [projekte, verbrauchMap, articles, monsBy])
 
   // On xl the whole list view is pinned to the viewport bottom (same
   // pattern as Lieferanten/Bewegung): hard height measured from the
@@ -1163,12 +1138,12 @@ export default function AuftraegePage({ articles, setArticles }) {
   const sel       = filtered.find(p => p.id === selId) ?? paged[0] ?? null
 
   /* ── headline stats ── */
-  const realGewinn = (p) => projektRealisierterGewinn(p, verbrauchMap, articles)
+  const realGewinn = (p) => projektRealisierterGewinn(p, verbrauchMap, articles, monsBy[p.id])
   const aktiveCount = projekte.filter(p => p.status === 'aktiv').length
   const kasneCount  = projekte.filter(isSpaet).length
   const erwarteterGewinn   = projekte.filter(p => isOffen(p.status)).reduce((s, p) => s + projektGewinn(p), 0)
   const realisierterGewinn = projekte.filter(p => p.status === 'abgeschlossen').reduce((s, p) => s + realGewinn(p), 0)
-  const marge = durchschnittGewinnmarge(projekte, verbrauchMap, articles)
+  const marge = durchschnittGewinnmarge(projekte, verbrauchMap, articles, monsBy)
 
   const vsLabel = t('auf_vs_last_month')
   const GREEN = 'rgb(var(--color-green))', RED = 'rgb(var(--color-red))'
@@ -1190,7 +1165,7 @@ export default function AuftraegePage({ articles, setArticles }) {
 
   /* ── quick stats (footer) ── */
   const statusCount = (s) => projekte.filter(p => p.status === s).length
-  const laufzeiten = projekte.map(projektLaufzeitTage).filter(v => v !== null)
+  const laufzeiten = projekte.map(p => projektLaufzeitTage(p, monsBy[p.id])).filter(v => v !== null)
   const avgDauer = laufzeiten.length ? Math.round(laufzeiten.reduce((s, v) => s + v, 0) / laufzeiten.length) : null
   const volumen = projekte.reduce((s, p) => s + Number(p.verkaufspreis ?? 0), 0)
 
@@ -1201,18 +1176,15 @@ export default function AuftraegePage({ articles, setArticles }) {
   const aufwandGeplant = sel && sel.geplante_arbeiter_anzahl && sel.geplante_wochen
     ? Math.round(sel.geplante_arbeiter_anzahl * Number(sel.arbeitsstunden_pro_woche ?? 40) * Number(sel.geplante_wochen))
     : null
-  const aufwandReal = sel ? Math.round(projektArbeitsstunden(sel)) : 0
+  const aufwandReal = sel ? Math.round(projektArbeitsstunden(sel, monsBy[sel.id])) : 0
   const selPct = sel ? projektFortschrittPct(sel) : null
   const selMarge = sel && Number(sel.verkaufspreis) > 0 ? (projektGewinn(sel) / Number(sel.verkaufspreis)) * 100 : null
 
-  // Same side effects as ProjektDetail's changeStatus: stop the running
-  // clock, then stamp status + abgeschlossen_at.
+  // Purely a status stamp — running Montagen stay open, the worker
+  // checks himself out (his day may span more than this project).
   const completeProjekt = async () => {
     if (!sel) return
     setCompleting(true)
-    await supabase.from('projekt_zeiterfassung')
-      .update({ ended_at: new Date().toISOString() })
-      .eq('projekt_id', sel.id).is('ended_at', null)
     await supabase.from('projekte')
       .update({ status: 'abgeschlossen', abgeschlossen_at: new Date().toISOString() })
       .eq('id', sel.id)
