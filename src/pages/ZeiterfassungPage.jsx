@@ -17,6 +17,11 @@ const dateKey = (d = new Date()) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 const fmtDatum = (d) => new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(new Date(d))
+const hms = (ms) => {
+  const s = Math.max(Math.floor(ms / 1000), 0)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}`
+}
 const initialen = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
 const AV = ['#e8821c', '#4a90d9', '#4caf6e', '#9b6bd9', '#d96b8f', '#3fb6c4']
 const avColor = (n = '') => AV[[...n].reduce((s, c) => s + c.charCodeAt(0), 0) % AV.length]
@@ -42,6 +47,12 @@ function StempelKarte({ firma, onChanged }) {
     setLoading(false)
   }, [user.id])
   useEffect(() => { load() }, [load])
+
+  // Own 1s tick so the "worked" and "pause" counters advance live
+  // (LiveDuration only re-renders itself, not this card's computed
+  // net time).
+  const [nowT, setNowT] = useState(Date.now())
+  useEffect(() => { const id = setInterval(() => setNowT(Date.now()), 1000); return () => clearInterval(id) }, [])
 
   const refresh = () => { load(); onChanged?.() }
 
@@ -121,6 +132,12 @@ function StempelKarte({ firma, onChanged }) {
     </Card>
   )
 
+  // Live counters (nowT drives the 1s re-render). Net worked = elapsed
+  // since Kommen minus pause; during a running pause both grow equally,
+  // so "Gearbeitet" holds still while "Pause" ticks up.
+  const pauseMs = pausenMin(mine) * 60000
+  const netMs = Math.max((nowT - new Date(mine.kommen_at).getTime()) - pauseMs, 0)
+
   return (
     <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
           style={{ borderColor: pauseLaeuft(mine) ? '#e8821c55' : '#4caf6e55' }}>
@@ -142,11 +159,11 @@ function StempelKarte({ firma, onChanged }) {
         </div>
         <div className="bg-bg-2 border border-border rounded-xl p-3">
           <div className="text-[11px] text-muted mb-1">{t('zt_pause')}</div>
-          <div className="text-sm font-semibold font-mono">{fmtStd(pausenMin(mine))}</div>
+          <div className="text-sm font-semibold font-mono tabular-nums" style={{ color: pauseLaeuft(mine) ? '#e8821c' : undefined }}>{hms(pauseMs)}</div>
         </div>
         <div className="bg-bg-2 border border-border rounded-xl p-3">
           <div className="text-[11px] text-muted mb-1">{t('zt_gearbeitet')}</div>
-          <LiveDuration since={mine.kommen_at} color={pauseLaeuft(mine) ? '#e8821c' : '#4caf6e'} className="text-sm font-semibold" />
+          <div className="text-sm font-semibold font-mono tabular-nums" style={{ color: pauseLaeuft(mine) ? '#e8821c' : '#4caf6e' }}>{hms(netMs)}</div>
         </div>
       </div>
 
