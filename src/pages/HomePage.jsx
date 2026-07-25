@@ -402,7 +402,7 @@ export default function HomePage({ articles = [], moves = [] }) {
             <div className="flex items-center gap-3 mb-2">
               <Logo size="sm" />
               <div>
-                <div className="font-extrabold text-sm">Stock<span className="text-amber">Master</span></div>
+                <div className="font-extrabold text-sm">Werk<span className="text-amber">held</span></div>
                 <Tagline size="sm" />
               </div>
             </div>

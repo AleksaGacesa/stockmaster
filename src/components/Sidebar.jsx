@@ -57,7 +57,7 @@ export default function Sidebar({ open, onClose, lowStockCount }) {
           <Logo size="sm" />
           <div>
             <div className="font-extrabold text-base leading-tight tracking-tight">
-              Stock<span className="text-amber">Master</span>
+              Werk<span className="text-amber">held</span>
             </div>
             <Tagline size="sm" />
           </div>

@@ -61,7 +61,7 @@ export default function ImportPage({ setArticles }) {
     }])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Artikel')
-    XLSX.writeFile(wb, 'StockMaster_Vorlage.xlsx')
+    XLSX.writeFile(wb, 'Werkheld_Vorlage.xlsx')
   }
 
   const DropZone = ({ compact = false }) => (

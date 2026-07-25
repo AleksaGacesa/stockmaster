@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/*.png'],
       manifest: {
-        name: 'StockMaster',
-        short_name: 'StockMaster',
-        description: 'Lagerverwaltung für Ihr Unternehmen',
+        name: 'Werkheld',
+        short_name: 'Werkheld',
+        description: 'Handwerkersoftware für Ihren Betrieb',
         theme_color: '#e8821c',
         background_color: '#101316',
         display: 'standalone',

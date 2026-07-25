@@ -53,7 +53,7 @@ export default function LoginPage() {
             <Logo size="lg" />
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight">
-            Stock<span className="text-amber">Master</span>
+            Werk<span className="text-amber">held</span>
           </h1>
           <div className="mt-1"><Tagline size="lg" /></div>
           <p className="text-secondary text-sm mt-2">{t('login_subtitle')}</p>
@@ -116,7 +116,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-xs text-muted mt-6">
-          StockMaster · {lang === 'en' ? 'Warehouse Management' : 'Lagerverwaltung'}
+          Werkheld · {lang === 'en' ? 'Trade Business Software' : 'Handwerkersoftware'}
         </p>
       </div>
     </div>

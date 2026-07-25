@@ -24,7 +24,7 @@ export default function Layout({ lowStockCount }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { pathname } = useLocation()
   const { t } = useLanguage()
-  const title = PAGE_TITLE_KEYS[pathname] ? t(PAGE_TITLE_KEYS[pathname]) : 'StockMaster'
+  const title = PAGE_TITLE_KEYS[pathname] ? t(PAGE_TITLE_KEYS[pathname]) : 'Werkheld'
 
   return (
     <div className="flex h-full bg-bg-0 overflow-hidden">
