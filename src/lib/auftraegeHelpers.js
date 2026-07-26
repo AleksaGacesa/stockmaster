@@ -65,7 +65,7 @@ export const projektGewinn = (p) => Number(p.verkaufspreis ?? 0) - projektGesamt
 // feeds the live "Im Einsatz seit" clock. Null while nobody is out.
 export const projektAktivSeit = (montagen) => {
   const laufend = (montagen ?? []).filter(m => !m.ende_at)
-  return laufend.length > 0 ? Math.min(...laufend.map(m => new Date(m.abfahrt_at).getTime())) : null
+  return laufend.length > 0 ? Math.min(...laufend.map(m => new Date(m.abfahrt_at ?? m.ankunft_at).getTime())) : null
 }
 
 export const fmtDauer = (ms) => {
@@ -83,7 +83,7 @@ export const fmtDauer = (ms) => {
 // did/does this project take", not labor-hours.
 export const projektLaufzeitTage = (p, montagen) => {
   const starts = [
-    ...(montagen ?? []).map(m => new Date(m.abfahrt_at).getTime()),
+    ...(montagen ?? []).map(m => new Date(m.abfahrt_at ?? m.ankunft_at).getTime()),
     ...(p.zeiterfassung ?? []).map(s => new Date(s.started_at).getTime()),
   ]
   if (starts.length === 0) return null

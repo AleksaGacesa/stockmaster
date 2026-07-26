@@ -271,7 +271,7 @@ export default function ZeiterfassungPage() {
   const load = useCallback(async () => {
     const [{ data: az }, { data: mon }, { data: prof }, { data: firmaD }, { data: korr }] = await Promise.all([
       supabase.from('arbeitszeiten').select('*').order('datum', { ascending: false }).limit(3000),
-      supabase.from('montagen').select('arbeiter_id, arbeiter_name, datum, abfahrt_at, ende_at, pause_min').limit(3000),
+      supabase.from('montagen').select('arbeiter_id, arbeiter_name, datum, abfahrt_at, ankunft_at, ende_at, pause_min').limit(3000),
       supabase.from('profiles').select('id, display_name, role, stundensatz, vertrag_stunden, vertrag_periode').order('display_name'),
       supabase.from('firmendaten').select('firma_lat, firma_lng, firma_radius, soll_stunden_tag').eq('id', 1).single(),
       supabase.from('arbeitszeit_korrekturen').select('*').order('created_at', { ascending: false }).limit(300),

@@ -3,10 +3,17 @@
 // since the Montagen rework derives project labor costs from these
 // entries instead of the old 24h crew clock.
 
-// Outbound drive, fixed once the worker taps "Angekommen".
-export const montageFahrzeitMin = (m) => m.ankunft_at
+// Outbound drive, fixed once the worker taps "Angekommen". Entries
+// started with "Arbeit starten" (no paid drive that day) have no
+// abfahrt_at — their Fahrzeit is simply none.
+export const montageFahrzeitMin = (m) => (m.ankunft_at && m.abfahrt_at)
   ? Math.max((new Date(m.ankunft_at) - new Date(m.abfahrt_at)) / 60000, 0)
   : null
+
+// The entry's reference start for sorting/day-grouping: the drive start
+// if there was one, otherwise the moment work began. Never null — every
+// entry has at least one of the two.
+export const montageStartAt = (m) => m.abfahrt_at ?? m.ankunft_at
 
 // Net working time (arrival → end/now, minus the reported break).
 export const montageArbeitMin = (m) => {

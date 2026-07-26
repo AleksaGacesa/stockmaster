@@ -11,8 +11,25 @@ import DonutChart from '../components/DonutChart'
 import { fmt, fmtDt } from '../lib/auftraegeHelpers'
 import {
   montageFahrzeitMin as fahrzeitMin, montageArbeitMin as arbeitMin,
-  fmtMin, fmtH, distanzMeter, fmtDistanz,
+  montageStartAt, fmtMin, fmtH, distanzMeter, fmtDistanz,
 } from '../lib/montagenHelpers'
+
+// Best-effort GPS check-in: resolves to {lat,lng,distanz} against a
+// pinned site, or {} when GPS is off/denied/times out (allowed — the
+// boss just sees it unverified). Shared by Abfahrt→Angekommen and the
+// direct "Arbeit starten" path.
+async function checkinPatch(standort) {
+  if (!(standort?.standort_lat != null && navigator.geolocation)) return {}
+  try {
+    const pos = await new Promise((res, rej) =>
+      navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }))
+    return {
+      ankunft_lat: pos.coords.latitude,
+      ankunft_lng: pos.coords.longitude,
+      ankunft_distanz: distanzMeter(pos.coords.latitude, pos.coords.longitude, standort.standort_lat, standort.standort_lng),
+    }
+  } catch { return {} }
+}
 
 /* ── status & cost helpers ── */
 const MON_META = {
@@ -145,40 +162,71 @@ function MonStatusBadge({ status }) {
   )
 }
 
-/* ══ START FORM — project select + Abfahrt (inline in the filter bar
-   for managers, standalone card for workers) ══ */
+/* ══ START FORM — pick a project, then EITHER log the paid drive
+   ("Abfahrt") OR start work directly on site ("Arbeit starten"). The two
+   are independent: firms that don't drive every day (or whose on-site
+   commute isn't paid) just start work; the drive is logged only on the
+   days it actually counts. ══ */
 function MontageStart({ projekte, onStarted, inline = false }) {
   const { t } = useLanguage()
   const { user, profile } = useAuth()
   const [projektId, setProjektId] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState('')
 
-  const starten = async () => {
+  const baseRow = () => ({
+    projekt_id: Number(projektId),
+    arbeiter_id: user.id,
+    arbeiter_name: profile?.display_name ?? '',
+  })
+
+  // Log the paid drive: row starts "unterwegs", abfahrt_at = now (DB
+  // default). The worker taps "Angekommen" on the live card to arrive.
+  const abfahrt = async () => {
     if (!projektId) return
-    setBusy(true)
+    setBusy('abfahrt')
+    await supabase.from('montagen').insert(baseRow())
+    setBusy(''); setProjektId('')
+    onStarted()
+  }
+
+  // Start work directly — no paid drive today. abfahrt_at stays null
+  // (Fahrzeit = none); ankunft_at = now, so the row is "arbeitet" at
+  // once. GPS check-in is captured just like on Angekommen.
+  const arbeitStart = async () => {
+    if (!projektId) return
+    setBusy('arbeit')
+    const proj = projekte.find(p => p.id === Number(projektId))
+    const patch = await checkinPatch(proj)
     await supabase.from('montagen').insert({
-      projekt_id: Number(projektId),
-      arbeiter_id: user.id,
-      arbeiter_name: profile?.display_name ?? '',
+      ...baseRow(), abfahrt_at: null, ankunft_at: new Date().toISOString(), ...patch,
     })
-    setBusy(false); setProjektId('')
+    setBusy(''); setProjektId('')
     onStarted()
   }
 
   const controls = (
-    <div className={`flex gap-2 ${inline ? 'flex-1 min-w-[220px]' : 'flex-col sm:flex-row'}`}>
+    <div className={`flex gap-2 ${inline ? 'flex-1 min-w-[260px] flex-wrap' : 'flex-col'}`}>
       <select value={projektId} onChange={e => setProjektId(e.target.value)}
-              className="flex-1 bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber min-w-0">
+              className="flex-1 bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber min-w-[160px]">
         <option value="">{t('mon_select_projekt')}</option>
         {projekte.map(p => (
           <option key={p.id} value={p.id}>{p.name}{p.kunde ? ` — ${p.kunde}` : ''}</option>
         ))}
       </select>
-      <button onClick={starten} disabled={!projektId || busy}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50 shrink-0"
-              style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-        <Icon name="truck" size={14} color="#181c20" /> {t('mon_abfahrt')}
-      </button>
+      <div className="flex gap-2 shrink-0">
+        <button onClick={abfahrt} disabled={!projektId || busy}
+                title={t('mon_abfahrt_hint')}
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+          <Icon name="truck" size={14} color="#181c20" /> {t('mon_abfahrt')}
+        </button>
+        <button onClick={arbeitStart} disabled={!projektId || busy}
+                title={t('mon_arbeit_start_hint')}
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: '#4a90d9' }}>
+          <Icon name="settings" size={14} color="#fff" /> {t('mon_arbeit_start')}
+        </button>
+      </div>
     </div>
   )
 
@@ -189,6 +237,7 @@ function MontageStart({ projekte, onStarted, inline = false }) {
         <Icon name="mapPin" size={16} color="#e8821c" /> {t('mon_start_title')}
       </h3>
       {controls}
+      <p className="text-[11px] text-muted mt-2.5 leading-snug">{t('mon_start_hint')}</p>
     </Card>
   )
 }
@@ -228,17 +277,7 @@ function MontageLive({ offen, montagen, onChanged }) {
   // weak signal on site.
   const angekommen = async () => {
     setBusy(true)
-    const patch = { ankunft_at: new Date().toISOString() }
-    const st = offen.projekt
-    if (st?.standort_lat != null && navigator.geolocation) {
-      try {
-        const pos = await new Promise((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }))
-        patch.ankunft_lat = pos.coords.latitude
-        patch.ankunft_lng = pos.coords.longitude
-        patch.ankunft_distanz = distanzMeter(pos.coords.latitude, pos.coords.longitude, st.standort_lat, st.standort_lng)
-      } catch { /* GPS denied/timeout — allowed, stays unverified */ }
-    }
+    const patch = { ankunft_at: new Date().toISOString(), ...(await checkinPatch(offen.projekt)) }
     await supabase.from('montagen').update(patch).eq('id', offen.id)
     setBusy(false)
     onChanged()
@@ -450,8 +489,8 @@ export default function MontagenPage() {
     const seit = new Date()
     seit.setMonth(seit.getMonth() - 6)
     const [{ data: mons }, { data: projs }, { data: profs }, { data: firma }, { data: mv }, { data: arts }] = await Promise.all([
-      supabase.from('montagen').select('*, projekt:projekte(id,name,kunde,dokument_nr,standort_lat,standort_lng,standort_radius)').order('abfahrt_at', { ascending: false }).limit(500),
-      supabase.from('projekte').select('id,name,kunde,status,dokument_nr').in('status', ['aktiv', 'geplant']).order('name'),
+      supabase.from('montagen').select('*, projekt:projekte(id,name,kunde,dokument_nr,standort_lat,standort_lng,standort_radius)').order('datum', { ascending: false }).order('id', { ascending: false }).limit(500),
+      supabase.from('projekte').select('id,name,kunde,status,dokument_nr,standort_lat,standort_lng,standort_radius').in('status', ['aktiv', 'geplant']).order('name'),
       supabase.from('profiles').select('*').order('display_name'),
       supabase.from('firmendaten').select('km_satz').eq('id', 1).single(),
       supabase.from('warenbewegungen').select('artikel_id, artikel_name, menge, projekt_id, projekt, created_at')
@@ -493,9 +532,9 @@ export default function MontagenPage() {
 
   /* ── headline stats ── */
   const jetzt = new Date()
-  const wocheEintraege = montagen.filter(m => new Date(m.abfahrt_at) >= wkStart())
+  const wocheEintraege = montagen.filter(m => new Date(montageStartAt(m)) >= wkStart())
   const vorwocheEintraege = montagen.filter(m => {
-    const d = new Date(m.abfahrt_at)
+    const d = new Date(montageStartAt(m))
     return d >= wkStart(1) && d < wkStart()
   })
   const sumMin = (list) => list.reduce((s, m) => s + (fahrzeitMin(m) ?? 0) + arbeitMin(m), 0)
@@ -503,7 +542,7 @@ export default function MontagenPage() {
   const vorwocheMin = sumMin(vorwocheEintraege)
   const wocheDelta = (wocheMin - vorwocheMin) / 60
 
-  const monatEintraege = montagen.filter(m => sameMonth(new Date(m.abfahrt_at), jetzt))
+  const monatEintraege = montagen.filter(m => sameMonth(new Date(montageStartAt(m)), jetzt))
   const materialKosten = (list) => list.reduce((s, mv) => s + Number(mv.menge) * (artikelPreise.get(mv.artikel_id) ?? 0), 0)
   const monatMoves = moves.filter(mv => sameMonth(new Date(mv.created_at), jetzt))
   const monatArbeitskosten = monatEintraege.reduce((s, m) => s + monArbeitskosten(m, profMap), 0)
@@ -520,7 +559,7 @@ export default function MontagenPage() {
     const wochen = [], wochenAvg = []
     for (let i = 5; i >= 0; i--) {
       const von = wkStart(i), bis = wkStart(i - 1)
-      const es = montagen.filter(m => { const d = new Date(m.abfahrt_at); return d >= von && d < bis })
+      const es = montagen.filter(m => { const d = new Date(montageStartAt(m)); return d >= von && d < bis })
       const min = sumMin(es)
       wochen.push(min / 60)
       const arb = new Set(es.map(m => m.arbeiter_id ?? m.arbeiter_name)).size
