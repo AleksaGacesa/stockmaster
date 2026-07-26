@@ -7,6 +7,55 @@ import Card from '../components/Card'
 import Icon from '../components/Icon'
 import MapPicker from '../components/MapPicker'
 import { useLanguage } from '../hooks/useLanguage'
+import { useTheme } from '../hooks/useTheme'
+
+const AV = ['#e8821c', '#4a90d9', '#4caf6e', '#9b6bd9', '#d96b8f', '#3fb6c4']
+const avColor = (n = '') => AV[[...n].reduce((s, c) => s + c.charCodeAt(0), 0) % AV.length]
+const initialen = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
+
+const ROLE_META = {
+  owner: { color: '#4caf6e' },
+  admin: { color: '#4a90d9' },
+  worker: { color: '#9b6bd9' },
+}
+function RoleBadge({ role }) {
+  const { t } = useLanguage()
+  const m = ROLE_META[role] ?? ROLE_META.worker
+  const label = role === 'owner' ? t('sidebar_owner') : role === 'admin' ? t('sidebar_admin') : t('sidebar_worker')
+  return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap" style={{ background: m.color + '1a', color: m.color }}>{label}</span>
+}
+
+// Non-interactive Leaflet preview of the saved company location + its
+// check-in radius circle. Leaflet is lazy-loaded (never in the base
+// bundle). Falls back to a placeholder when no location is set.
+function StandortPreview({ lat, lng, radius }) {
+  const boxRef = useRef(null)
+  const mapRef = useRef(null)
+  useEffect(() => {
+    if (lat == null) { mapRef.current?.remove(); mapRef.current = null; return }
+    let disposed = false
+    Promise.all([import('leaflet'), import('leaflet/dist/leaflet.css')]).then(([mod]) => {
+      if (disposed || !boxRef.current) return
+      const L = mod.default ?? mod
+      mapRef.current?.remove()
+      const map = L.map(boxRef.current, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false })
+        .setView([lat, lng], 15)
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map)
+      L.circle([lat, lng], { radius: radius || 150, color: '#e8821c', fillColor: '#e8821c', fillOpacity: 0.15, weight: 1.5 }).addTo(map)
+      L.circleMarker([lat, lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#e8821c', fillOpacity: 1 }).addTo(map)
+      setTimeout(() => map.invalidateSize(), 60)
+      mapRef.current = map
+    })
+    return () => { disposed = true; mapRef.current?.remove(); mapRef.current = null }
+  }, [lat, lng, radius])
+
+  if (lat == null) {
+    return <div className="h-32 rounded-xl bg-bg-2 border border-border flex items-center justify-center text-muted text-xs">
+      <Icon name="mapPin" size={18} color="#6b7480" />
+    </div>
+  }
+  return <div ref={boxRef} className="h-32 rounded-xl overflow-hidden border border-border bg-bg-2" />
+}
 
 // Consistent section header (icon chip + title) used across the
 // settings cards so the page reads like the rest of the app.
@@ -244,9 +293,105 @@ function StandortCard({ firma, setFirma }) {
   )
 }
 
-export default function EinstellungenPage({ articles, moves, setArticles, setMoves }) {
+// One user line: avatar, name + role badge, Aktiv, and a ⋯ menu for
+// changing the role or deleting the account.
+function UserRow({ u, changeRole, deleteUser, confirmDelete, setConfirmDelete }) {
   const { t } = useLanguage()
+  const [menu, setMenu] = useState(false)
+  const roleLabel = (r) => r === 'owner' ? t('sidebar_owner') : r === 'admin' ? t('sidebar_admin') : t('sidebar_worker')
+  return (
+    <div className="relative flex items-center gap-3 py-3">
+      <span className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: avColor(u.display_name) }}>
+        {initialen(u.display_name)}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium truncate">{u.display_name}</span>
+          <RoleBadge role={u.role} />
+        </div>
+      </div>
+      <span className="flex items-center gap-1.5 text-xs text-secondary shrink-0">
+        <span className="w-2 h-2 rounded-full" style={{ background: 'rgb(var(--color-green))' }} /> {t('set_aktiv')}
+      </span>
+      <button onClick={() => setMenu(m => !m)} className="p-1.5 rounded-lg hover:bg-bg-2 border border-border shrink-0">
+        <Icon name="dots" size={15} color="#9aa3ad" />
+      </button>
+      {menu && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+          <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-bg-1 border border-border rounded-xl shadow-lg p-1">
+            <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted">{t('set_field_role')}</div>
+            {['worker', 'admin', 'owner'].map(r => (
+              <button key={r} onClick={() => { changeRole(u.id, r); setMenu(false) }}
+                      className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-sm hover:bg-bg-2 text-left">
+                {roleLabel(r)}{u.role === r && <Icon name="check" size={13} color="#4caf6e" />}
+              </button>
+            ))}
+            <div className="border-t border-border my-1" />
+            {confirmDelete === u.id ? (
+              <div className="flex items-center gap-1 px-2 py-1">
+                <span className="text-[11px] text-red flex-1">{t('common_delete_confirm')}</span>
+                <button onClick={() => { deleteUser(u.id); setMenu(false) }} className="text-[11px] bg-red text-white px-2 py-1 rounded">{t('common_yes')}</button>
+                <button onClick={() => setConfirmDelete(null)} className="text-[11px] text-muted px-1">{t('common_no')}</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(u.id)} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-red hover:bg-red-dim text-left">
+                <Icon name="trash" size={13} color="#e0524a" /> {t('common_delete')}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Read-only company data with a "Bearbeiten" button that flips to the
+// editable FirmaCard.
+function FirmendatenView({ firma, onEdit }) {
+  const { t } = useLanguage()
+  const [showPin, setShowPin] = useState(false)
+  const Field = ({ label, value }) => (
+    <div className="min-w-0">
+      <div className="text-[11px] text-muted mb-0.5">{label}</div>
+      <div className="text-sm font-medium truncate">{value || '—'}</div>
+    </div>
+  )
+  return (
+    <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <SectionHead icon="building" color="#4a90d9" title={t('set_company_data')}
+        action={<button onClick={onEdit} className="flex items-center gap-1.5 text-sm bg-bg-2 border border-border px-3 py-2 rounded-lg text-secondary hover:bg-bg-3 transition-colors shrink-0"><Icon name="edit" size={13} color="currentColor" /> {t('set_bearbeiten')}</button>} />
+      <p className="text-xs text-secondary mb-4 -mt-2">{t('set_firma_sub')}</p>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3.5">
+        <Field label={t('set_company_name')} value={firma.name} />
+        <Field label={t('lief_field_email')} value={firma.email} />
+        <Field label={t('lief_field_address')} value={firma.adresse} />
+        <Field label={t('set_vat_id')} value={firma.ust_idnr} />
+        <Field label={t('lief_field_phone')} value={firma.telefon} />
+        <div className="min-w-0">
+          <div className="text-[11px] text-muted mb-0.5">{t('set_change_pin')}</div>
+          <div className="text-sm font-medium flex items-center gap-2">
+            <span className="font-mono">{firma.aenderungs_pin ? (showPin ? firma.aenderungs_pin : '••••') : '—'}</span>
+            {firma.aenderungs_pin && (
+              <button onClick={() => setShowPin(s => !s)} className="text-muted hover:text-primary">
+                <Icon name={showPin ? 'eyeOff' : 'eye'} size={14} color="currentColor" />
+              </button>
+            )}
+          </div>
+        </div>
+        <Field label={t('set_tax_number')} value={firma.steuernummer} />
+      </div>
+    </Card>
+  )
+}
+
+export default function EinstellungenPage({ articles, moves, setArticles, setMoves }) {
+  const { t, lang, toggleLang } = useLanguage()
+  const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
+  const [firmaEdit, setFirmaEdit]     = useState(false)
+  const [showStandortMap, setShowStandortMap] = useState(false)
+  const [advMsg, setAdvMsg]           = useState(null)
   const [users, setUsers]             = useState([])
   const [showAddUser, setShowAddUser] = useState(false)
   const [newEmail, setNewEmail]       = useState('')
@@ -338,164 +483,167 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
 
   const closeUserForm = () => { setShowAddUser(false); setUserError(null) }
 
+  const saveStandort = async (patch) => {
+    await supabase.from('firmendaten').update(patch).eq('id', 1)
+    setFirma(f => ({ ...f, ...patch }))
+  }
+  const showAdvSoon = () => { setAdvMsg(t('set_adv_soon')); setTimeout(() => setAdvMsg(null), 2500) }
+
   return (
-    <>
-      {/* ══ MOBILE ══ */}
-      <div className="lg:hidden flex flex-col h-[100dvh] overflow-y-auto">
-        <div className="p-3 space-y-3">
-          <h1 className="text-base font-semibold">{t('set_title')}</h1>
-
-          {/* Users */}
-          <Card className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-semibold text-sm">{t('set_user_mgmt')}</span>
-              {!showAddUser && (
-                <button onClick={() => { setShowAddUser(true); setUserError(null) }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold"
-                        style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-                  <Icon name="plus" size={12} color="#181c20" /> {t('common_new')}
-                </button>
-              )}
-            </div>
-            {userMsg && (
-              <div className="flex items-center gap-2 text-green text-xs bg-green-dim rounded-xl px-3 py-2 mb-3">
-                <Icon name="check" size={13} color="#4caf6e" /> {userMsg}
-              </div>
-            )}
-            {deleteError && (
-              <div className="flex items-center gap-2 text-red text-xs bg-red-dim rounded-xl px-3 py-2 mb-3">
-                <Icon name="alert" size={13} color="#e0524a" /> {deleteError}
-              </div>
-            )}
-            {showAddUser && (
-              <UserForm
-                newName={newName} setNewName={setNewName}
-                newEmail={newEmail} setNewEmail={setNewEmail}
-                newPassword={newPassword} setNewPassword={setNewPassword}
-                newRole={newRole} setNewRole={setNewRole}
-                userError={userError} onAdd={addUser} onCancel={closeUserForm}
-              />
-            )}
-            <UserList
-              users={users} confirmDelete={confirmDelete} setConfirmDelete={setConfirmDelete}
-              changeRole={changeRole} deleteUser={deleteUser}
-            />
-          </Card>
-
-          <FirmaCard firma={firma} setFirma={setFirma} onSave={saveFirma} saving={firmaSaving} msg={firmaMsg} />
-
-          <StandortCard firma={firma} setFirma={setFirma} />
-
-          {/* Export */}
-          <Card className="p-4">
-            <h2 className="font-semibold text-sm mb-3">{t('set_export_data')}</h2>
-            <div className="flex flex-col gap-2">
-              <button onClick={exportExcel}
-                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm bg-bg-2 border border-border">
-                <Icon name="download" size={14} color="#9aa3ad" /> {t('set_export_excel')}
-              </button>
-              <button onClick={exportJSON}
-                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm bg-bg-2 border border-border">
-                <Icon name="download" size={14} color="#9aa3ad" /> {t('set_export_json')}
-              </button>
-            </div>
-          </Card>
-
-          {/* Import */}
-          <Card className="p-4">
-            <h2 className="font-semibold text-sm mb-2">{t('nav_import')}</h2>
-            <p className="text-xs text-secondary mb-3">{t('set_import_desc')}</p>
-            <button onClick={() => navigate('/import')}
-                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm bg-bg-2 border border-border">
-              <Icon name="upload" size={14} color="#9aa3ad" /> {t('set_import_open')}
-            </button>
-          </Card>
-
-          {/* Info */}
-          <Card className="p-4">
-            <h2 className="font-semibold text-sm mb-2">{t('set_storage_location')}</h2>
-            <p className="text-xs text-secondary leading-relaxed">
-              {t('set_storage_desc_mobile')}
-            </p>
-          </Card>
-        </div>
+    <div className="p-3 sm:p-6 lg:p-8">
+      <div className="mb-5">
+        <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('set_title')}</h1>
+        <p className="text-secondary text-sm">{t('set_page_sub')}</p>
       </div>
 
-      {/* ══ DESKTOP ══ */}
-      <div className="hidden lg:block p-6 lg:p-8">
-        <div className="mb-5">
-          <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('set_title')}</h1>
-          <p className="text-secondary text-sm">{t('set_subtitle')}</p>
-        </div>
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
-          {/* User management — spans two columns */}
-          <Card className="p-5 xl:col-span-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        {/* ══ LEFT ══ */}
+        <div className="space-y-5">
+          {/* Benutzerverwaltung */}
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <SectionHead icon="user" color="#4a90d9" title={t('set_user_mgmt')}
               action={!showAddUser && (
                 <button onClick={() => { setShowAddUser(true); setUserError(null) }}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold shrink-0"
-                        style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-                  <Icon name="plus" size={14} color="#181c20" /> {t('set_employee')}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold shrink-0 text-white"
+                        style={{ background: '#4caf6e' }}>
+                  <Icon name="plus" size={14} color="#fff" /> {t('set_add_employee')}
                 </button>
               )} />
-            <p className="text-xs text-secondary mb-4 -mt-2">{t('set_user_mgmt_desc')}</p>
-            {userMsg && (
-              <div className="flex items-center gap-2 text-green text-sm bg-green-dim rounded-xl px-3 py-2.5 mb-4">
-                <Icon name="check" size={14} color="#4caf6e" /> {userMsg}
-              </div>
-            )}
-            {deleteError && (
-              <div className="flex items-center gap-2 text-red text-sm bg-red-dim rounded-xl px-3 py-2.5 mb-4">
-                <Icon name="alert" size={14} color="#e0524a" /> {deleteError}
-              </div>
-            )}
+            <p className="text-xs text-secondary mb-4 -mt-2">{t('set_user_mgmt_sub')}</p>
+            {userMsg && <div className="flex items-center gap-2 text-green text-sm bg-green-dim rounded-xl px-3 py-2.5 mb-4"><Icon name="check" size={14} color="#4caf6e" /> {userMsg}</div>}
+            {deleteError && <div className="flex items-center gap-2 text-red text-sm bg-red-dim rounded-xl px-3 py-2.5 mb-4"><Icon name="alert" size={14} color="#e0524a" /> {deleteError}</div>}
             {showAddUser && (
-              <UserForm
-                newName={newName} setNewName={setNewName}
-                newEmail={newEmail} setNewEmail={setNewEmail}
-                newPassword={newPassword} setNewPassword={setNewPassword}
-                newRole={newRole} setNewRole={setNewRole}
-                userError={userError} onAdd={addUser} onCancel={closeUserForm}
-              />
+              <UserForm newName={newName} setNewName={setNewName} newEmail={newEmail} setNewEmail={setNewEmail}
+                        newPassword={newPassword} setNewPassword={setNewPassword} newRole={newRole} setNewRole={setNewRole}
+                        userError={userError} onAdd={addUser} onCancel={closeUserForm} />
             )}
-            <UserList
-              users={users} confirmDelete={confirmDelete} setConfirmDelete={setConfirmDelete}
-              changeRole={changeRole} deleteUser={deleteUser}
-            />
+            <div className="divide-y divide-border">
+              {users.map(u => (
+                <UserRow key={u.id} u={u} changeRole={changeRole} deleteUser={deleteUser}
+                         confirmDelete={confirmDelete} setConfirmDelete={setConfirmDelete} />
+              ))}
+            </div>
           </Card>
 
-          {/* Right column: company, location, data, storage */}
-          <div className="space-y-5">
-            <FirmaCard firma={firma} setFirma={setFirma} onSave={saveFirma} saving={firmaSaving} msg={firmaMsg} />
-            <StandortCard firma={firma} setFirma={setFirma} />
-
-            <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-              <SectionHead icon="download" color="#4caf6e" title={t('set_data')} />
-              <div className="flex flex-col gap-2 -mt-2">
-                <button onClick={exportExcel}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-primary hover:bg-bg-3 transition-colors">
-                  <Icon name="download" size={15} color="#9aa3ad" /> {t('set_export_excel')}
-                </button>
-                <button onClick={exportJSON}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-primary hover:bg-bg-3 transition-colors">
-                  <Icon name="download" size={15} color="#9aa3ad" /> {t('set_export_json')}
-                </button>
-                <button onClick={() => navigate('/import')}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-primary hover:bg-bg-3 transition-colors">
-                  <Icon name="upload" size={15} color="#9aa3ad" /> {t('set_import_open')}
-                </button>
+          {/* System */}
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <SectionHead icon="settings" color="#4a90d9" title={t('set_system')} />
+            <p className="text-xs text-secondary mb-4 -mt-2">{t('set_system_sub')}</p>
+            <div className="divide-y divide-border">
+              <div className="flex items-center justify-between gap-3 py-3">
+                <span className="text-sm">{t('set_language')}</span>
+                <select value={lang} onChange={e => { if (e.target.value !== lang) toggleLang() }}
+                        className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber">
+                  <option value="de">🇩🇪 Deutsch</option>
+                  <option value="en">🇬🇧 English</option>
+                </select>
               </div>
-            </Card>
+              <div className="flex items-center justify-between gap-3 py-3">
+                <span className="text-sm">{t('set_timezone')}</span>
+                <select disabled className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
+                  <option>Europe/Berlin (UTC+2)</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-3">
+                <span className="text-sm">{t('set_design')}</span>
+                <select value={theme} onChange={e => { if (e.target.value !== theme) toggleTheme() }}
+                        className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber">
+                  <option value="light">☀️ {t('theme_light_short')}</option>
+                  <option value="dark">🌙 {t('theme_dark_short')}</option>
+                </select>
+              </div>
+            </div>
+          </Card>
+        </div>
 
-            <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-              <SectionHead icon="settings" color="#9aa3ad" title={t('set_storage_location')} />
-              <p className="text-xs text-secondary leading-relaxed -mt-2">
-                {t('set_storage_desc_mobile')}{t('set_storage_desc_extra')}
-              </p>
-            </Card>
-          </div>
+        {/* ══ RIGHT ══ */}
+        <div className="space-y-5">
+          {/* Firmendaten */}
+          {firmaEdit
+            ? <FirmaCard firma={firma} setFirma={setFirma}
+                         onSave={async () => { await saveFirma(); setFirmaEdit(false) }}
+                         saving={firmaSaving} msg={firmaMsg} />
+            : <FirmendatenView firma={firma} onEdit={() => setFirmaEdit(true)} />}
+
+          {/* Firmen-Standort — map preview */}
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <SectionHead icon="mapPin" color="#4a90d9" title={t('set_standort_titel')} />
+            <p className="text-xs text-secondary mb-3 -mt-2">{t('set_standort_desc2')}</p>
+            <StandortPreview lat={firma.firma_lat} lng={firma.firma_lng} radius={Number(firma.firma_radius) || 150} />
+            <button onClick={() => setShowStandortMap(true)}
+                    className="w-full flex items-center justify-center gap-2 mt-3 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-secondary hover:bg-bg-3 transition-colors">
+              <Icon name="mapPin" size={15} color="currentColor" /> {t('set_standort_pick_map')}
+            </button>
+            <div className="flex items-center gap-2 mt-3 text-xs text-muted">
+              <span>{t('set_aktueller_radius')}:</span>
+              <input type="number" min="30" step="10" value={firma.firma_radius ?? 150}
+                     onChange={e => setFirma(f => ({ ...f, firma_radius: e.target.value }))}
+                     onBlur={() => saveStandort({ firma_radius: Math.max(Number(firma.firma_radius) || 150, 30) })}
+                     className="w-16 bg-bg-2 border border-border rounded-lg px-2 py-1 text-xs font-mono text-right outline-none focus:border-amber" />
+              <span>m</span>
+              <Icon name="edit" size={12} color="#6b7480" />
+            </div>
+            {firma.adresse && (
+              <div className="flex items-center gap-1.5 mt-2 text-[11px] text-muted">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--color-green))' }} />
+                {t('set_aktueller_standort')}: {firma.adresse}
+              </div>
+            )}
+          </Card>
+
+          {/* Daten */}
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <SectionHead icon="box" color="#4caf6e" title={t('set_data')} />
+            <p className="text-xs text-secondary mb-4 -mt-2">{t('set_data_sub')}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {[
+                { icon: 'download', title: t('set_export_excel_label'), sub: t('set_export_excel_sub'), onClick: exportExcel },
+                { icon: 'download', title: t('set_export_json_label'), sub: t('set_export_json_sub'), onClick: exportJSON },
+                { icon: 'upload', title: t('set_import_open'), sub: t('set_import_sub'), onClick: () => navigate('/import') },
+              ].map(b => (
+                <button key={b.title} onClick={b.onClick}
+                        className="flex flex-col items-start gap-1 p-3 rounded-xl bg-bg-2 border border-border hover:bg-bg-3 transition-colors text-left">
+                  <Icon name={b.icon} size={16} color="#9aa3ad" />
+                  <span className="text-sm font-medium mt-1">{b.title}</span>
+                  <span className="text-[11px] text-muted leading-tight">{b.sub}</span>
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          {/* Erweiterte Einstellungen */}
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <SectionHead icon="settings" color="#9aa3ad" title={t('set_adv_title')} />
+            <p className="text-xs text-secondary mb-3 -mt-2">{t('set_adv_sub')}</p>
+            {advMsg && <div className="text-[11px] text-amber bg-amber-dim rounded-lg px-3 py-2 mb-2">{advMsg}</div>}
+            <div className="divide-y divide-border -my-1">
+              {[
+                { icon: 'clock', color: '#4caf6e', title: t('set_adv_zeit'), sub: t('set_adv_zeit_sub') },
+                { icon: 'alert', color: '#e8821c', title: t('set_adv_notif'), sub: t('set_adv_notif_sub') },
+                { icon: 'eye', color: '#9b6bd9', title: t('set_adv_security'), sub: t('set_adv_security_sub') },
+              ].map(r => (
+                <button key={r.title} onClick={showAdvSoon}
+                        className="w-full flex items-center gap-3 py-3 text-left hover:bg-bg-2/50 rounded-lg px-1 transition-colors">
+                  <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: r.color + '1f' }}>
+                    <Icon name={r.icon} size={15} color={r.color} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">{r.title}</div>
+                    <div className="text-[11px] text-muted truncate">{r.sub}</div>
+                  </div>
+                  <Icon name="chevronRight" size={16} color="#6b7480" />
+                </button>
+              ))}
+            </div>
+          </Card>
         </div>
       </div>
-    </>
+
+      {showStandortMap && (
+        <MapPicker lat={firma.firma_lat} lng={firma.firma_lng} radius={Number(firma.firma_radius) || 150}
+                   onPick={(lat, lng) => saveStandort({ firma_lat: lat, firma_lng: lng })}
+                   onClose={() => setShowStandortMap(false)} />
+      )}
+    </div>
   )
 }
