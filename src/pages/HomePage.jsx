@@ -627,14 +627,14 @@ export default function HomePage({ articles = [], moves = [] }) {
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
               <StatCard label={t('home_articles_total')} value={articles.length} icon="package" color="#4a90d9" onClick={() => navigate('/uebersicht')}
                         spark={kennzahlenSeries.map(s => s.artikel_anzahl)} trend={trendFor(kennzahlenSeries, 'artikel_anzahl')} trendMode="pct" />
-              <StatCard label={t('home_stock_value')} value={totalValue} format={fmt} icon="chart" color="#4caf6e"
-                        spark={kennzahlenSeries.map(s => s.lagerwert)} trend={trendFor(kennzahlenSeries, 'lagerwert')} trendMode="pct" />
               <StatCard label={t('home_low_stock_full')} value={lowStock.length} icon="alert" color="#e0524a" onClick={() => navigate('/uebersicht?bestand=Niedrig')}
                         spark={kennzahlenSeries.map(s => s.niedriger_bestand)} trend={trendFor(kennzahlenSeries, 'niedriger_bestand')} trendMode="abs" />
               <StatCard label={t('home_open_orders')} value={bestellungen.length} icon="building" color="#9b6bd9" onClick={() => navigate('/lieferanten?tab=bestellungen')}
                         spark={kennzahlenSeries.map(s => s.offene_bestellungen)} trend={trendFor(kennzahlenSeries, 'offene_bestellungen')} trendMode="abs" />
               <StatCard label={t('home_active_projects')} value={aktiveProjekte} icon="clipboard" color="#4a90d9" onClick={() => navigate('/auftraege')}
                         spark={kennzahlenSeries.map(s => s.aktive_projekte)} trend={trendFor(kennzahlenSeries, 'aktive_projekte')} trendMode="abs" />
+              <StatCard label={t('home_stock_value')} value={totalValue} format={fmt} icon="chart" color="#4caf6e"
+                        spark={kennzahlenSeries.map(s => s.lagerwert)} trend={trendFor(kennzahlenSeries, 'lagerwert')} trendMode="pct" />
               <StatCard label={t('home_expected_profit')} value={erwarteterGewinnAuftraege} format={fmt} icon="chart" color="#e8821c"
                         spark={kennzahlenSeries.map(s => s.erwarteter_gewinn)} trend={trendFor(kennzahlenSeries, 'erwarteter_gewinn')} trendMode="pct" />
             </div>

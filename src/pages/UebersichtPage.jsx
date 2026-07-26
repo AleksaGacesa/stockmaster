@@ -663,8 +663,8 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border bg-bg-2">
-                    {[...(selectMode ? [''] : []), t('ueb_col_number'), t('ueb_col_name'), t('ueb_col_status'), t('ueb_col_location'), t('ueb_col_category'), t('ueb_col_qty'),
-                      ...(isManager ? [t('ueb_col_price'), t('ueb_col_supplier'), ''] : [])
+                    {[...(selectMode ? [''] : []), t('ueb_col_number'), '', t('ueb_col_name'), t('ueb_col_status'), t('ueb_col_location'), t('ueb_col_category'), t('ueb_col_qty'),
+                      ...(isManager ? [t('ueb_col_price'), t('ueb_col_supplier')] : [])
                     ].map((h, i) => (
                       <th key={i} className="text-left px-4 py-3 text-xs text-muted font-medium whitespace-nowrap">{h}</th>
                     ))}
@@ -673,9 +673,9 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                 <tbody>
                   {filtered.map(a => (
                     <tr key={a.id}
-                        onClick={() => selectMode && toggleSelected(a.id)}
+                        onClick={() => selectMode ? toggleSelected(a.id) : (isManager && openEdit(a))}
                         className={`border-b border-border transition-colors ${
-                          selectMode ? 'cursor-pointer' : ''
+                          selectMode || isManager ? 'cursor-pointer' : ''
                         } ${selectMode && selected.has(a.id) ? 'bg-amber-dim' : 'hover:bg-bg-2/50'}`}>
                       {selectMode && (
                         <td className="px-4 py-3">
@@ -683,6 +683,11 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                         </td>
                       )}
                       <td className="px-4 py-3 font-mono text-amber font-medium text-xs whitespace-nowrap">{a.nummer}</td>
+                      <td className="px-3 py-2">
+                        <div className="w-9 h-9 rounded-lg overflow-hidden border border-border shrink-0">
+                          <ArtikelBild artikel={a} iconSize={15} />
+                        </div>
+                      </td>
                       <td className="px-4 py-3 font-medium">{a.name}</td>
                       <td className="px-4 py-3 whitespace-nowrap"><StockBadge menge={a.menge} mindestbestand={a.mindestbestand} /></td>
                       <td className="px-4 py-3">
@@ -692,15 +697,6 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
                       <td className="px-4 py-3 font-mono whitespace-nowrap">{a.menge} <span className="text-muted text-xs">{a.einheit}</span></td>
                       {isManager && <td className="px-4 py-3 font-mono whitespace-nowrap text-xs">{fmt(a.preis)}</td>}
                       {isManager && <td className="px-4 py-3 text-secondary text-xs whitespace-nowrap">{a.lieferant}</td>}
-                      {isManager && (
-                        <td className="px-4 py-3">
-                          {!selectMode && (
-                            <button onClick={() => openEdit(a)} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors">
-                              <Icon name="edit" size={14} color="#9aa3ad" />
-                            </button>
-                          )}
-                        </td>
-                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -7,10 +7,44 @@ import Icon from '../components/Icon'
 import StatusDot from '../components/StatusDot'
 import LiveDuration from '../components/LiveDuration'
 import CountUp from '../components/CountUp'
+import { useOnlinePresence } from '../hooks/useOnlinePresence'
 import {
   arbeitstag, pausenMin, pauseLaeuft, fmtStd, fmtStdDezimal, fmtUhr, wochenStart,
 } from '../lib/arbeitszeitHelpers'
 import { distanzMeter, fmtDistanz } from '../lib/montagenHelpers'
+
+function ZtSparkline({ points, color }) {
+  const W = 88, H = 28
+  if (!points || points.length < 2 || Math.max(...points) === 0) return <svg width={W} height={H} />
+  const min = Math.min(...points), max = Math.max(...points)
+  const span = max - min || 1
+  const pts = points.map((v, i) => `${(i / (points.length - 1)) * W},${H - 3 - ((v - min) / span) * (H - 6)}`).join(' ')
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ZtStatCard({ label, value, sub, subColor, icon, color, spark }) {
+  return (
+    <Card className="p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: color + '1f' }}>
+          <Icon name={icon} size={15} color={color} />
+        </div>
+        <span className="text-xs text-secondary leading-tight">{label}</span>
+      </div>
+      <div className="flex items-end justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-lg font-bold font-mono truncate">{typeof value === 'number' ? <CountUp value={value} /> : value}</div>
+          <div className="text-[11px] mt-0.5 truncate" style={{ color: subColor ?? 'rgb(var(--text-muted))' }}>{sub ?? ' '}</div>
+        </div>
+        {spark && <ZtSparkline points={spark} color={color} />}
+      </div>
+    </Card>
+  )
+}
 
 const dateKey = (d = new Date()) => {
   const p = (n) => String(n).padStart(2, '0')
@@ -300,6 +334,7 @@ function KorrekturModal({ tag, firma, onClose, onSaved }) {
 export default function ZeiterfassungPage() {
   const { t, lang } = useLanguage()
   const { isManager } = useAuth()
+  const { roster, onlineIds } = useOnlinePresence()
   const [arbeitszeiten, setArbeitszeiten] = useState([])
   const [montagen, setMontagen] = useState([])
   const [profiles, setProfiles] = useState([])
@@ -392,6 +427,28 @@ export default function ZeiterfassungPage() {
     return Object.values(m).sort((a, b) => b.min - a.min)
   })()
 
+  // Real sparkline history: hours per week (6) and per month (6).
+  const sparks = useMemo(() => {
+    const now = new Date()
+    const wk = [], mo = []
+    for (let i = 5; i >= 0; i--) {
+      const von = wochenStart(i), bis = wochenStart(i - 1)
+      wk.push(tage.filter(g => { const d = new Date(g.datum + 'T12:00:00'); return d >= von && d < bis }).reduce((s, g) => s + g.nettoMin, 0) / 60)
+    }
+    for (let i = 5; i >= 0; i--) {
+      const ref = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      mo.push(tage.filter(g => { const d = new Date(g.datum + 'T12:00:00'); return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() }).reduce((s, g) => s + g.nettoMin, 0) / 60)
+    }
+    return { wk, mo }
+  }, [tage])
+  const deltaSub = (arr, unit = 'h') => {
+    const d = arr[5] - arr[4]
+    return { sub: `${d >= 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')} ${unit} ${t('mon_vs_woche')}`,
+             subColor: d >= 0 ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))' }
+  }
+  const onlineCount = roster.filter(u => onlineIds.has(String(u.id))).length
+  const roleLabel = (role) => role === 'owner' ? t('sidebar_owner') : role === 'admin' ? t('sidebar_admin') : t('sidebar_worker')
+
   return (
     <div className="p-3 sm:p-6 lg:p-8">
       <div className="mb-5">
@@ -405,23 +462,16 @@ export default function ZeiterfassungPage() {
       {isManager && (
         <>
           {/* stat cards */}
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 mb-4">
-            {[
-              { label: t('zt_stat_anwesend'), value: anwesend.length, icon: 'user', color: '#4caf6e', mono: true },
-              { label: t('zt_stat_woche'), value: fmtStd(wocheMin), icon: 'clock', color: '#4a90d9' },
-              { label: t('zt_stat_monat'), value: fmtStd(monatMin), icon: 'chart', color: '#e8821c' },
-              { label: t('zt_stat_mitarbeiter'), value: profiles.length, icon: 'user', color: '#9b6bd9', mono: true },
-            ].map(s => (
-              <Card key={s.label} className="p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: s.color + '1f' }}>
-                    <Icon name={s.icon} size={15} color={s.color} />
-                  </div>
-                  <span className="text-xs text-secondary leading-tight">{s.label}</span>
-                </div>
-                <div className="text-lg font-bold font-mono">{typeof s.value === 'number' ? <CountUp value={s.value} /> : s.value}</div>
-              </Card>
-            ))}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3 mb-4">
+            <ZtStatCard label={t('zt_stat_anwesend')} value={anwesend.length} icon="user" color="#4caf6e"
+                        sub={`${t('zt_von')} ${profiles.length}`} />
+            <ZtStatCard label={t('zt_stat_woche')} value={fmtStd(wocheMin)} icon="clock" color="#4a90d9"
+                        spark={sparks.wk} {...deltaSub(sparks.wk)} />
+            <ZtStatCard label={t('zt_stat_monat')} value={fmtStd(monatMin)} icon="chart" color="#e8821c"
+                        spark={sparks.mo} {...deltaSub(sparks.mo)} />
+            <ZtStatCard label={t('zt_team_online')} value={`${onlineCount}/${roster.length}`} icon="globe" color="#4caf6e"
+                        sub={t('zt_gerade_aktiv')} subColor={onlineCount > 0 ? 'rgb(var(--color-green))' : undefined} />
+            <ZtStatCard label={t('zt_stat_mitarbeiter')} value={profiles.length} icon="user" color="#9b6bd9" />
           </div>
 
           <div className="flex flex-col xl:flex-row gap-4 items-start">
@@ -539,6 +589,35 @@ export default function ZeiterfassungPage() {
                         <LiveDuration since={g.start} color="#4caf6e" className="text-xs" />
                       </div>
                     ))}
+                  </div>
+                )}
+              </Card>
+
+              {/* Team — who's logged into the app right now (moved from
+                  the sidebar; lives here next to attendance) */}
+              <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-sm flex items-center gap-2">
+                    <Icon name="globe" size={15} color="#4caf6e" /> {t('zt_team_online')}
+                  </h3>
+                  <span className="text-[11px] text-muted font-mono">{onlineCount}/{roster.length}</span>
+                </div>
+                {roster.length === 0 ? (
+                  <p className="text-xs text-muted text-center py-3">—</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                    {[...roster]
+                      .sort((a, b) => (onlineIds.has(String(b.id)) ? 1 : 0) - (onlineIds.has(String(a.id)) ? 1 : 0))
+                      .map(u => {
+                        const online = onlineIds.has(String(u.id))
+                        return (
+                          <div key={u.id} className="flex items-center gap-2.5 px-1 py-1">
+                            <StatusDot color={online ? '#4caf6e' : '#6b7480'} pulse={online} size={7} />
+                            <span className={`flex-1 min-w-0 truncate text-sm ${online ? 'text-primary' : 'text-muted'}`}>{u.display_name}</span>
+                            <span className="text-[10px] text-muted shrink-0">{roleLabel(u.role)}</span>
+                          </div>
+                        )
+                      })}
                   </div>
                 )}
               </Card>

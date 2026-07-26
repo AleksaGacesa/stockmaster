@@ -8,6 +8,22 @@ import Icon from '../components/Icon'
 import MapPicker from '../components/MapPicker'
 import { useLanguage } from '../hooks/useLanguage'
 
+// Consistent section header (icon chip + title) used across the
+// settings cards so the page reads like the rest of the app.
+function SectionHead({ icon, color, title, action }) {
+  return (
+    <div className="flex items-center justify-between mb-4 gap-3">
+      <h2 className="font-semibold flex items-center gap-2.5 min-w-0">
+        <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: color + '1f' }}>
+          <Icon name={icon} size={15} color={color} />
+        </span>
+        <span className="truncate">{title}</span>
+      </h2>
+      {action}
+    </div>
+  )
+}
+
 function UserForm({ newName, setNewName, newEmail, setNewEmail, newPassword, setNewPassword,
                      newRole, setNewRole, userError, onAdd, onCancel }) {
   const { t } = useLanguage()
@@ -129,8 +145,8 @@ function FirmaCard({ firma, setFirma, onSave, saving, msg }) {
   ]
   return (
     <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-      <h2 className="font-semibold text-sm sm:text-base mb-1">{t('set_company_data')}</h2>
-      <p className="text-xs text-secondary mb-4">{t('set_company_data_desc')}</p>
+      <SectionHead icon="building" color="#e8821c" title={t('set_company_data')} />
+      <p className="text-xs text-secondary mb-4 -mt-2">{t('set_company_data_desc')}</p>
       {msg && (
         <div className="flex items-center gap-2 text-green text-xs bg-green-dim rounded-xl px-3 py-2 mb-3">
           <Icon name="check" size={13} color="#4caf6e" /> {msg}
@@ -195,10 +211,8 @@ function StandortCard({ firma, setFirma }) {
 
   return (
     <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-      <h2 className="font-semibold mb-2 flex items-center gap-2">
-        <Icon name="mapPin" size={16} color="#e8821c" /> {t('set_standort_titel')}
-      </h2>
-      <p className="text-xs text-secondary mb-3">{t('set_standort_desc')}</p>
+      <SectionHead icon="mapPin" color="#4a90d9" title={t('set_standort_titel')} />
+      <p className="text-xs text-secondary mb-3 -mt-2">{t('set_standort_desc')}</p>
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={() => setShowMap(true)}
                 className="flex items-center gap-1.5 text-sm bg-bg-2 border border-border px-3 py-2 rounded-lg text-secondary hover:bg-bg-3 transition-colors">
@@ -413,19 +427,18 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
           <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('set_title')}</h1>
           <p className="text-secondary text-sm">{t('set_subtitle')}</p>
         </div>
-        <div className="flex gap-5 flex-wrap items-start">
-          <Card className="p-5 flex-[2_1_420px] shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold">{t('set_user_mgmt')}</h2>
-              {!showAddUser && (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
+          {/* User management — spans two columns */}
+          <Card className="p-5 xl:col-span-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <SectionHead icon="user" color="#4a90d9" title={t('set_user_mgmt')}
+              action={!showAddUser && (
                 <button onClick={() => { setShowAddUser(true); setUserError(null) }}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold shrink-0"
                         style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
                   <Icon name="plus" size={14} color="#181c20" /> {t('set_employee')}
                 </button>
-              )}
-            </div>
-            <p className="text-xs text-secondary mb-4">{t('set_user_mgmt_desc')}</p>
+              )} />
+            <p className="text-xs text-secondary mb-4 -mt-2">{t('set_user_mgmt_desc')}</p>
             {userMsg && (
               <div className="flex items-center gap-2 text-green text-sm bg-green-dim rounded-xl px-3 py-2.5 mb-4">
                 <Icon name="check" size={14} color="#4caf6e" /> {userMsg}
@@ -451,13 +464,14 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
             />
           </Card>
 
-          <div className="flex-[1_1_280px] space-y-4">
+          {/* Right column: company, location, data, storage */}
+          <div className="space-y-5">
             <FirmaCard firma={firma} setFirma={setFirma} onSave={saveFirma} saving={firmaSaving} msg={firmaMsg} />
             <StandortCard firma={firma} setFirma={setFirma} />
+
             <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-              <h2 className="font-semibold mb-2">{t('set_export_data')}</h2>
-              <p className="text-xs text-secondary mb-4">{t('set_export_desc')}</p>
-              <div className="flex flex-col gap-2">
+              <SectionHead icon="download" color="#4caf6e" title={t('set_data')} />
+              <div className="flex flex-col gap-2 -mt-2">
                 <button onClick={exportExcel}
                         className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-primary hover:bg-bg-3 transition-colors">
                   <Icon name="download" size={15} color="#9aa3ad" /> {t('set_export_excel')}
@@ -466,19 +480,16 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
                         className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-primary hover:bg-bg-3 transition-colors">
                   <Icon name="download" size={15} color="#9aa3ad" /> {t('set_export_json')}
                 </button>
+                <button onClick={() => navigate('/import')}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-primary hover:bg-bg-3 transition-colors">
+                  <Icon name="upload" size={15} color="#9aa3ad" /> {t('set_import_open')}
+                </button>
               </div>
             </Card>
+
             <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-              <h2 className="font-semibold mb-2">{t('nav_import')}</h2>
-              <p className="text-xs text-secondary mb-4">{t('set_import_desc')}</p>
-              <button onClick={() => navigate('/import')}
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-bg-2 border border-border text-primary hover:bg-bg-3 transition-colors">
-                <Icon name="upload" size={15} color="#9aa3ad" /> {t('set_import_open')}
-              </button>
-            </Card>
-            <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-              <h2 className="font-semibold mb-2">{t('set_storage_location')}</h2>
-              <p className="text-xs text-secondary leading-relaxed">
+              <SectionHead icon="settings" color="#9aa3ad" title={t('set_storage_location')} />
+              <p className="text-xs text-secondary leading-relaxed -mt-2">
                 {t('set_storage_desc_mobile')}{t('set_storage_desc_extra')}
               </p>
             </Card>
