@@ -396,6 +396,22 @@ export default function ZeiterfassungPage() {
     return m
   }, [korrekturen])
 
+  // Real sparkline history: hours per week (6) and per month (6). Must
+  // stay above the early return below — it's a hook.
+  const sparks = useMemo(() => {
+    const now = new Date()
+    const wk = [], mo = []
+    for (let i = 5; i >= 0; i--) {
+      const von = wochenStart(i), bis = wochenStart(i - 1)
+      wk.push(tage.filter(g => { const d = new Date(g.datum + 'T12:00:00'); return d >= von && d < bis }).reduce((s, g) => s + g.nettoMin, 0) / 60)
+    }
+    for (let i = 5; i >= 0; i--) {
+      const ref = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      mo.push(tage.filter(g => { const d = new Date(g.datum + 'T12:00:00'); return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() }).reduce((s, g) => s + g.nettoMin, 0) / 60)
+    }
+    return { wk, mo }
+  }, [tage])
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-64">
       <div className="w-6 h-6 border-2 border-amber border-t-transparent rounded-full animate-spin" />
@@ -427,20 +443,6 @@ export default function ZeiterfassungPage() {
     return Object.values(m).sort((a, b) => b.min - a.min)
   })()
 
-  // Real sparkline history: hours per week (6) and per month (6).
-  const sparks = useMemo(() => {
-    const now = new Date()
-    const wk = [], mo = []
-    for (let i = 5; i >= 0; i--) {
-      const von = wochenStart(i), bis = wochenStart(i - 1)
-      wk.push(tage.filter(g => { const d = new Date(g.datum + 'T12:00:00'); return d >= von && d < bis }).reduce((s, g) => s + g.nettoMin, 0) / 60)
-    }
-    for (let i = 5; i >= 0; i--) {
-      const ref = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      mo.push(tage.filter(g => { const d = new Date(g.datum + 'T12:00:00'); return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() }).reduce((s, g) => s + g.nettoMin, 0) / 60)
-    }
-    return { wk, mo }
-  }, [tage])
   const deltaSub = (arr, unit = 'h') => {
     const d = arr[5] - arr[4]
     return { sub: `${d >= 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')} ${unit} ${t('mon_vs_woche')}`,
