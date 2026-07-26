@@ -669,8 +669,6 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
     await supabase.from('firmendaten').update(patch).eq('id', 1)
     setFirma(f => ({ ...f, ...patch }))
   }
-  const showAdvSoon = () => { setAdvMsg(t('set_adv_soon')); setTimeout(() => setAdvMsg(null), 2500) }
-
   return (
     <div ref={rootRef} className="p-3 sm:p-6 lg:p-8 xl:flex xl:flex-col xl:overflow-hidden xl:h-[var(--tab-h)]"
          style={{ '--tab-h': tabH ? `${tabH}px` : 'auto' }}>
@@ -798,7 +796,6 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
           <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <SectionHead icon="settings" color="#9aa3ad" title={t('set_adv_title')} />
             <p className="text-xs text-secondary mb-3 -mt-2">{t('set_adv_sub')}</p>
-            {advMsg && <div className="text-[11px] text-amber bg-amber-dim rounded-lg px-3 py-2 mb-2">{advMsg}</div>}
             <div className="divide-y divide-border -my-1">
               {[
                 { icon: 'clock', color: '#4caf6e', title: t('set_adv_zeit'), sub: t('set_adv_zeit_sub'), open: () => setShowZeitCfg(true) },
