@@ -13,6 +13,43 @@ const AV = ['#e8821c', '#4a90d9', '#4caf6e', '#9b6bd9', '#d96b8f', '#3fb6c4']
 const avColor = (n = '') => AV[[...n].reduce((s, c) => s + c.charCodeAt(0), 0) % AV.length]
 const initialen = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
 
+// Inline SVG flags — Windows does not render emoji flags (🇩🇪 shows as
+// "DE"), so we draw them ourselves for a consistent look on every OS.
+function Flag({ lang, className = '' }) {
+  const cls = `rounded-[2px] shrink-0 ${className}`
+  if (lang === 'en') {
+    return (
+      <svg width="22" height="15" viewBox="0 0 60 40" className={cls} aria-hidden>
+        <rect width="60" height="40" fill="#012169" />
+        <path d="M0 0 60 40M60 0 0 40" stroke="#fff" strokeWidth="8" />
+        <path d="M0 0 60 40M60 0 0 40" stroke="#C8102E" strokeWidth="4" />
+        <rect x="25" width="10" height="40" fill="#fff" />
+        <rect y="15" width="60" height="10" fill="#fff" />
+        <rect x="27" width="6" height="40" fill="#C8102E" />
+        <rect y="17" width="60" height="6" fill="#C8102E" />
+      </svg>
+    )
+  }
+  return (
+    <svg width="22" height="15" viewBox="0 0 60 40" className={cls} aria-hidden>
+      <rect width="60" height="13.34" y="0" fill="#000" />
+      <rect width="60" height="13.34" y="13.33" fill="#DD0000" />
+      <rect width="60" height="13.34" y="26.66" fill="#FFCE00" />
+    </svg>
+  )
+}
+
+// The app renders all timestamps in the device's local zone; we surface
+// the detected zone (read-only) instead of a non-functional dropdown.
+const localTimezone = () => {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin'
+    const off = -new Date().getTimezoneOffset() / 60
+    const utc = `UTC${off >= 0 ? '+' : ''}${off}`
+    return `${tz} (${utc})`
+  } catch { return 'Europe/Berlin' }
+}
+
 const ROLE_META = {
   owner: { color: '#4caf6e' },
   admin: { color: '#4a90d9' },
@@ -763,17 +800,18 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
             <div className="divide-y divide-border">
               <div className="flex items-center justify-between gap-3 py-3">
                 <span className="text-sm">{t('set_language')}</span>
-                <select value={lang} onChange={e => { if (e.target.value !== lang) toggleLang() }}
-                        className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber">
-                  <option value="de">🇩🇪 Deutsch</option>
-                  <option value="en">🇬🇧 English</option>
-                </select>
+                <div className="flex items-center gap-2 bg-bg-2 border border-border rounded-xl pl-3 pr-1 focus-within:border-amber">
+                  <Flag lang={lang} />
+                  <select value={lang} onChange={e => { if (e.target.value !== lang) toggleLang() }}
+                          className="bg-transparent py-2 pr-2 text-sm outline-none cursor-pointer">
+                    <option value="de">Deutsch</option>
+                    <option value="en">English</option>
+                  </select>
+                </div>
               </div>
               <div className="flex items-center justify-between gap-3 py-3">
                 <span className="text-sm">{t('set_timezone')}</span>
-                <select disabled className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
-                  <option>Europe/Berlin (UTC+2)</option>
-                </select>
+                <span className="text-sm text-secondary bg-bg-2 border border-border rounded-xl px-3 py-2">{localTimezone()}</span>
               </div>
               <div className="flex items-center justify-between gap-3 py-3">
                 <span className="text-sm">{t('set_design')}</span>
