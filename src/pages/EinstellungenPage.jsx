@@ -293,12 +293,14 @@ function StandortCard({ firma, setFirma }) {
   )
 }
 
-// One user line: avatar, name + role badge, Aktiv, and a ⋯ menu for
-// changing the role or deleting the account.
-function UserRow({ u, changeRole, deleteUser, confirmDelete, setConfirmDelete }) {
+// One user line: avatar, name + role badge + contract hint, Aktiv, and
+// a ⋯ menu to edit (role, rate, contract) or delete the account.
+function UserRow({ u, onEdit, deleteUser, confirmDelete, setConfirmDelete }) {
   const { t } = useLanguage()
   const [menu, setMenu] = useState(false)
-  const roleLabel = (r) => r === 'owner' ? t('sidebar_owner') : r === 'admin' ? t('sidebar_admin') : t('sidebar_worker')
+  const vertragHint = u.vertrag_stunden
+    ? `${Number(u.vertrag_stunden).toString().replace('.', ',')} h/${u.vertrag_periode === 'tag' ? t('set_tag_short') : t('set_woche_short')}`
+    : null
   return (
     <div className="relative flex items-center gap-3 py-3">
       <span className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: avColor(u.display_name) }}>
@@ -309,6 +311,11 @@ function UserRow({ u, changeRole, deleteUser, confirmDelete, setConfirmDelete })
           <span className="text-sm font-medium truncate">{u.display_name}</span>
           <RoleBadge role={u.role} />
         </div>
+        {(u.stundensatz > 0 || vertragHint) && (
+          <div className="text-[11px] text-muted truncate">
+            {u.stundensatz > 0 && `${Number(u.stundensatz).toString().replace('.', ',')} €/h`}{u.stundensatz > 0 && vertragHint && ' · '}{vertragHint}
+          </div>
+        )}
       </div>
       <span className="flex items-center gap-1.5 text-xs text-secondary shrink-0">
         <span className="w-2 h-2 rounded-full" style={{ background: 'rgb(var(--color-green))' }} /> {t('set_aktiv')}
@@ -319,14 +326,10 @@ function UserRow({ u, changeRole, deleteUser, confirmDelete, setConfirmDelete })
       {menu && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-          <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-bg-1 border border-border rounded-xl shadow-lg p-1">
-            <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted">{t('set_field_role')}</div>
-            {['worker', 'admin', 'owner'].map(r => (
-              <button key={r} onClick={() => { changeRole(u.id, r); setMenu(false) }}
-                      className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-sm hover:bg-bg-2 text-left">
-                {roleLabel(r)}{u.role === r && <Icon name="check" size={13} color="#4caf6e" />}
-              </button>
-            ))}
+          <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-bg-1 border border-border rounded-xl shadow-lg p-1">
+            <button onClick={() => { onEdit(u); setMenu(false) }} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm hover:bg-bg-2 text-left">
+              <Icon name="edit" size={13} color="#9aa3ad" /> {t('set_bearbeiten')}
+            </button>
             <div className="border-t border-border my-1" />
             {confirmDelete === u.id ? (
               <div className="flex items-center gap-1 px-2 py-1">
@@ -343,6 +346,176 @@ function UserRow({ u, changeRole, deleteUser, confirmDelete, setConfirmDelete })
         </>
       )}
     </div>
+  )
+}
+
+/* ── Small centered modal shell ── */
+function Modal({ title, icon, color, onClose, children, footer }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-bg-1 border border-border w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl max-h-[92dvh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-base font-semibold flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: (color ?? '#4a90d9') + '1f' }}><Icon name={icon ?? 'settings'} size={14} color={color ?? '#4a90d9'} /></span>
+            {title}
+          </h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2"><Icon name="x" size={16} color="#9aa3ad" /></button>
+        </div>
+        <div className="p-5 space-y-4">{children}</div>
+        {footer && <div className="flex gap-2 px-5 pb-5">{footer}</div>}
+      </div>
+    </div>
+  )
+}
+
+const inputCls = 'w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber'
+
+/* ── Per-employee: role, rate, contract ── */
+function MitarbeiterModal({ user, onClose, onSaved }) {
+  const { t } = useLanguage()
+  const [role, setRole] = useState(user.role)
+  const [satz, setSatz] = useState(user.stundensatz != null ? String(user.stundensatz) : '')
+  const [vertrag, setVertrag] = useState(user.vertrag_stunden != null ? String(user.vertrag_stunden) : '')
+  const [periode, setPeriode] = useState(user.vertrag_periode ?? 'woche')
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    await supabase.from('profiles').update({
+      role, stundensatz: Math.max(Number(satz) || 0, 0),
+      vertrag_stunden: vertrag === '' ? null : Math.max(Number(vertrag) || 0, 0),
+      vertrag_periode: periode,
+    }).eq('id', user.id)
+    setBusy(false); onSaved()
+  }
+  return (
+    <Modal title={user.display_name} icon="user" color="#4a90d9" onClose={onClose}
+           footer={<><button onClick={save} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>{busy ? '…' : t('common_save')}</button><button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm text-secondary border border-border hover:bg-bg-2">{t('common_cancel')}</button></>}>
+      <div>
+        <label className="block text-xs text-secondary mb-1">{t('set_field_role')}</label>
+        <select value={role} onChange={e => setRole(e.target.value)} className={inputCls}>
+          <option value="worker">{t('sidebar_worker')}</option>
+          <option value="admin">{t('sidebar_admin')}</option>
+          <option value="owner">{t('sidebar_owner')}</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs text-secondary mb-1">{t('set_stundensatz')}</label>
+        <div className="relative">
+          <input type="number" min="0" step="0.5" value={satz} onChange={e => setSatz(e.target.value)} placeholder="0" className={`${inputCls} pr-12 font-mono`} />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">€/h</span>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-secondary mb-1">{t('set_vertrag')}</label>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input type="number" min="0" step="0.5" value={vertrag} onChange={e => setVertrag(e.target.value)} placeholder="40" className={`${inputCls} pr-8 font-mono`} />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">h</span>
+          </div>
+          <select value={periode} onChange={e => setPeriode(e.target.value)} className="bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber">
+            <option value="tag">{t('set_pro_tag')}</option>
+            <option value="woche">{t('set_pro_woche')}</option>
+          </select>
+        </div>
+        <p className="text-[11px] text-muted mt-1">{t('set_vertrag_hint')}</p>
+      </div>
+    </Modal>
+  )
+}
+
+/* ── Company default work-time (fallback for overtime) ── */
+function ArbeitszeitConfigModal({ firma, onClose, onSaved }) {
+  const { t } = useLanguage()
+  const [soll, setSoll] = useState(String(firma.soll_stunden_tag ?? 8))
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    const val = Math.max(Number(soll) || 0, 0)
+    await supabase.from('firmendaten').update({ soll_stunden_tag: val }).eq('id', 1)
+    setBusy(false); onSaved({ soll_stunden_tag: val })
+  }
+  return (
+    <Modal title={t('set_adv_zeit')} icon="clock" color="#4caf6e" onClose={onClose}
+           footer={<><button onClick={save} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>{busy ? '…' : t('common_save')}</button><button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm text-secondary border border-border hover:bg-bg-2">{t('common_cancel')}</button></>}>
+      <p className="text-xs text-secondary">{t('set_adv_zeit_sub')}</p>
+      <div>
+        <label className="block text-xs text-secondary mb-1">{t('set_soll_tag')}</label>
+        <div className="relative">
+          <input type="number" min="0" step="0.5" value={soll} onChange={e => setSoll(e.target.value)} className={`${inputCls} pr-8 font-mono`} />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">h</span>
+        </div>
+        <p className="text-[11px] text-muted mt-1">{t('set_soll_hint')}</p>
+      </div>
+    </Modal>
+  )
+}
+
+/* ── Notification preferences (saved; delivery is a future backend) ── */
+function BenachrichtigungenModal({ firma, onClose, onSaved }) {
+  const { t } = useLanguage()
+  const init = firma.benachrichtigungen ?? {}
+  const OPTS = [
+    ['niedriger_bestand', t('set_notif_lowstock')],
+    ['neue_bestellung', t('set_notif_order')],
+    ['projekt_frist', t('set_notif_deadline')],
+    ['gps_ausserhalb', t('set_notif_gps')],
+  ]
+  const [prefs, setPrefs] = useState(() => Object.fromEntries(OPTS.map(([k]) => [k, !!init[k]])))
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    await supabase.from('firmendaten').update({ benachrichtigungen: prefs }).eq('id', 1)
+    setBusy(false); onSaved({ benachrichtigungen: prefs })
+  }
+  return (
+    <Modal title={t('set_adv_notif')} icon="alert" color="#e8821c" onClose={onClose}
+           footer={<><button onClick={save} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>{busy ? '…' : t('common_save')}</button><button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm text-secondary border border-border hover:bg-bg-2">{t('common_cancel')}</button></>}>
+      <div className="space-y-1">
+        {OPTS.map(([k, label]) => (
+          <button key={k} onClick={() => setPrefs(p => ({ ...p, [k]: !p[k] }))} className="w-full flex items-center justify-between gap-3 py-2.5 text-left">
+            <span className="text-sm">{label}</span>
+            <span className={`w-10 h-6 rounded-full p-0.5 transition-colors shrink-0 ${prefs[k] ? 'bg-green' : 'bg-bg-3'}`}>
+              <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${prefs[k] ? 'translate-x-4' : ''}`} />
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted">{t('set_notif_hint')}</p>
+    </Modal>
+  )
+}
+
+/* ── Security: change-PIN + roles overview ── */
+function SicherheitModal({ firma, users, onClose, onSaved }) {
+  const { t } = useLanguage()
+  const [pin, setPin] = useState(firma.aenderungs_pin ?? '')
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    await supabase.from('firmendaten').update({ aenderungs_pin: pin.trim() }).eq('id', 1)
+    setBusy(false); onSaved({ aenderungs_pin: pin.trim() })
+  }
+  return (
+    <Modal title={t('set_adv_security')} icon="eye" color="#9b6bd9" onClose={onClose}
+           footer={<><button onClick={save} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>{busy ? '…' : t('common_save')}</button><button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm text-secondary border border-border hover:bg-bg-2">{t('common_cancel')}</button></>}>
+      <div>
+        <label className="block text-xs text-secondary mb-1">{t('set_change_pin')}</label>
+        <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="1234" className={`${inputCls} font-mono`} />
+        <p className="text-[11px] text-muted mt-1">{t('set_pin_hint')}</p>
+      </div>
+      <div>
+        <div className="text-xs text-secondary mb-2">{t('set_zugriffsrechte')}</div>
+        <div className="space-y-1.5">
+          {users.map(u => (
+            <div key={u.id} className="flex items-center justify-between gap-2">
+              <span className="text-sm truncate">{u.display_name}</span>
+              <RoleBadge role={u.role} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="text-[11px] text-muted">{t('set_2fa_hint')}</p>
+    </Modal>
   )
 }
 
@@ -391,7 +564,16 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
   const navigate = useNavigate()
   const [firmaEdit, setFirmaEdit]     = useState(false)
   const [showStandortMap, setShowStandortMap] = useState(false)
-  const [advMsg, setAdvMsg]           = useState(null)
+  const [editUser, setEditUser]       = useState(null)
+  const [showZeitCfg, setShowZeitCfg] = useState(false)
+  const [showNotif, setShowNotif]     = useState(false)
+  const [showSec, setShowSec]         = useState(false)
+  const rootRef = useRef(null)
+  const [tabH, setTabH] = useState(null)
+  useEffect(() => {
+    const calc = () => { const el = rootRef.current; if (el) setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 44, 460)) }
+    calc(); window.addEventListener('resize', calc); return () => window.removeEventListener('resize', calc)
+  }, [])
   const [users, setUsers]             = useState([])
   const [showAddUser, setShowAddUser] = useState(false)
   const [newEmail, setNewEmail]       = useState('')
@@ -490,17 +672,18 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
   const showAdvSoon = () => { setAdvMsg(t('set_adv_soon')); setTimeout(() => setAdvMsg(null), 2500) }
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8">
-      <div className="mb-5">
+    <div ref={rootRef} className="p-3 sm:p-6 lg:p-8 xl:flex xl:flex-col xl:overflow-hidden xl:h-[var(--tab-h)]"
+         style={{ '--tab-h': tabH ? `${tabH}px` : 'auto' }}>
+      <div className="mb-5 xl:shrink-0">
         <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('set_title')}</h1>
         <p className="text-secondary text-sm">{t('set_page_sub')}</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-        {/* ══ LEFT ══ */}
-        <div className="space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 xl:flex-1 xl:min-h-0">
+        {/* ══ LEFT — Benutzerverwaltung grows, System pinned below ══ */}
+        <div className="space-y-5 xl:flex xl:flex-col xl:min-h-0">
           {/* Benutzerverwaltung */}
-          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:flex-1 xl:flex xl:flex-col xl:min-h-0">
             <SectionHead icon="user" color="#4a90d9" title={t('set_user_mgmt')}
               action={!showAddUser && (
                 <button onClick={() => { setShowAddUser(true); setUserError(null) }}
@@ -517,16 +700,16 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
                         newPassword={newPassword} setNewPassword={setNewPassword} newRole={newRole} setNewRole={setNewRole}
                         userError={userError} onAdd={addUser} onCancel={closeUserForm} />
             )}
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border xl:flex-1 xl:min-h-0 xl:overflow-y-auto">
               {users.map(u => (
-                <UserRow key={u.id} u={u} changeRole={changeRole} deleteUser={deleteUser}
+                <UserRow key={u.id} u={u} onEdit={setEditUser} deleteUser={deleteUser}
                          confirmDelete={confirmDelete} setConfirmDelete={setConfirmDelete} />
               ))}
             </div>
           </Card>
 
           {/* System */}
-          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
             <SectionHead icon="settings" color="#4a90d9" title={t('set_system')} />
             <p className="text-xs text-secondary mb-4 -mt-2">{t('set_system_sub')}</p>
             <div className="divide-y divide-border">
@@ -557,7 +740,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
         </div>
 
         {/* ══ RIGHT ══ */}
-        <div className="space-y-5">
+        <div className="space-y-5 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
           {/* Firmendaten */}
           {firmaEdit
             ? <FirmaCard firma={firma} setFirma={setFirma}
@@ -618,11 +801,11 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
             {advMsg && <div className="text-[11px] text-amber bg-amber-dim rounded-lg px-3 py-2 mb-2">{advMsg}</div>}
             <div className="divide-y divide-border -my-1">
               {[
-                { icon: 'clock', color: '#4caf6e', title: t('set_adv_zeit'), sub: t('set_adv_zeit_sub') },
-                { icon: 'alert', color: '#e8821c', title: t('set_adv_notif'), sub: t('set_adv_notif_sub') },
-                { icon: 'eye', color: '#9b6bd9', title: t('set_adv_security'), sub: t('set_adv_security_sub') },
+                { icon: 'clock', color: '#4caf6e', title: t('set_adv_zeit'), sub: t('set_adv_zeit_sub'), open: () => setShowZeitCfg(true) },
+                { icon: 'alert', color: '#e8821c', title: t('set_adv_notif'), sub: t('set_adv_notif_sub'), open: () => setShowNotif(true) },
+                { icon: 'eye', color: '#9b6bd9', title: t('set_adv_security'), sub: t('set_adv_security_sub'), open: () => setShowSec(true) },
               ].map(r => (
-                <button key={r.title} onClick={showAdvSoon}
+                <button key={r.title} onClick={r.open}
                         className="w-full flex items-center gap-3 py-3 text-left hover:bg-bg-2/50 rounded-lg px-1 transition-colors">
                   <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: r.color + '1f' }}>
                     <Icon name={r.icon} size={15} color={r.color} />
@@ -641,9 +824,14 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
 
       {showStandortMap && (
         <MapPicker lat={firma.firma_lat} lng={firma.firma_lng} radius={Number(firma.firma_radius) || 150}
+                   title={t('set_standort_titel')}
                    onPick={(lat, lng) => saveStandort({ firma_lat: lat, firma_lng: lng })}
                    onClose={() => setShowStandortMap(false)} />
       )}
+      {editUser && <MitarbeiterModal user={editUser} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); loadUsers() }} />}
+      {showZeitCfg && <ArbeitszeitConfigModal firma={firma} onClose={() => setShowZeitCfg(false)} onSaved={(patch) => { setFirma(f => ({ ...f, ...patch })); setShowZeitCfg(false) }} />}
+      {showNotif && <BenachrichtigungenModal firma={firma} onClose={() => setShowNotif(false)} onSaved={(patch) => { setFirma(f => ({ ...f, ...patch })); setShowNotif(false) }} />}
+      {showSec && <SicherheitModal firma={firma} users={users} onClose={() => setShowSec(false)} onSaved={(patch) => { setFirma(f => ({ ...f, ...patch })); setShowSec(false) }} />}
     </div>
   )
 }

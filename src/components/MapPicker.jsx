@@ -7,7 +7,7 @@ import { useLanguage } from '../hooks/useLanguage'
 // location") drops the pin; the circle previews the check-in radius.
 // Leaflet is lazy-loaded so the ~150KB library never touches the
 // bundle of users who don't open the picker.
-export default function MapPicker({ lat, lng, radius = 150, onPick, onClose }) {
+export default function MapPicker({ lat, lng, radius = 150, onPick, onClose, title }) {
   const { t } = useLanguage()
   const boxRef = useRef(null)
   const mapRef = useRef(null)
@@ -66,7 +66,7 @@ export default function MapPicker({ lat, lng, radius = 150, onPick, onClose }) {
            onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="font-semibold text-sm flex items-center gap-2">
-            <Icon name="mapPin" size={15} color="#e8821c" /> {t('map_title')}
+            <Icon name="mapPin" size={15} color="#e8821c" /> {title ?? t('map_title')}
           </h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2">
             <Icon name="x" size={15} color="#9aa3ad" />

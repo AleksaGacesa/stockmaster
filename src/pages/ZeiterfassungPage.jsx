@@ -12,9 +12,16 @@ import {
 } from '../lib/arbeitszeitHelpers'
 import { distanzMeter } from '../lib/montagenHelpers'
 
-// Daily target hours → overtime. A constant for now; can move to a
-// company/worker setting later without touching the rest.
-const SOLL_MIN = 8 * 60
+// Daily target (minutes) for a worker → drives overtime. Uses the
+// worker's own contract (weekly value spread over 5 workdays), then
+// the company default, then 8h.
+const sollDayMin = (prof, firmaSoll) => {
+  if (prof?.vertrag_stunden != null && Number(prof.vertrag_stunden) > 0) {
+    const h = Number(prof.vertrag_stunden)
+    return Math.round((prof.vertrag_periode === 'tag' ? h : h / 5) * 60)
+  }
+  return Math.round((Number(firmaSoll ?? 8) || 8) * 60)
+}
 
 const dateKey = (d = new Date()) => {
   const p = (n) => String(n).padStart(2, '0')
@@ -265,8 +272,8 @@ export default function ZeiterfassungPage() {
     const [{ data: az }, { data: mon }, { data: prof }, { data: firmaD }, { data: korr }] = await Promise.all([
       supabase.from('arbeitszeiten').select('*').order('datum', { ascending: false }).limit(3000),
       supabase.from('montagen').select('arbeiter_id, arbeiter_name, datum, abfahrt_at, ende_at, pause_min').limit(3000),
-      supabase.from('profiles').select('id, display_name, role').order('display_name'),
-      supabase.from('firmendaten').select('firma_lat, firma_lng, firma_radius').eq('id', 1).single(),
+      supabase.from('profiles').select('id, display_name, role, stundensatz, vertrag_stunden, vertrag_periode').order('display_name'),
+      supabase.from('firmendaten').select('firma_lat, firma_lng, firma_radius, soll_stunden_tag').eq('id', 1).single(),
       supabase.from('arbeitszeit_korrekturen').select('*').order('created_at', { ascending: false }).limit(300),
     ])
     setArbeitszeiten(az ?? []); setMontagen(mon ?? []); setProfiles(prof ?? [])
@@ -297,7 +304,9 @@ export default function ZeiterfassungPage() {
   const shiftDay = (n) => { const d = new Date(selDate); d.setDate(d.getDate() + n); setSelDate(d) }
   const selKey = dateKey(selDate)
   const gesternKey = dateKey(new Date(selDate.getTime() - 86400000))
-  const overMin = (g) => (g.bruttoMin > 0 || g.nettoMin > 0) ? g.nettoMin - SOLL_MIN : 0
+  const profMap = new Map(profiles.map(p => [p.id, p]))
+  const overMin = (g) => (g.bruttoMin > 0 || g.nettoMin > 0)
+    ? g.nettoMin - sollDayMin(profMap.get(g.arbeiter_id), firma?.soll_stunden_tag) : 0
 
   // day aggregates
   const dayAgg = (datumStr) => {
