@@ -54,7 +54,9 @@ function StandortPreview({ lat, lng, radius }) {
       <Icon name="mapPin" size={18} color="#6b7480" />
     </div>
   }
-  return <div ref={boxRef} className="h-32 rounded-xl overflow-hidden border border-border bg-bg-2" />
+  // `isolate` traps Leaflet's high pane z-indexes in their own stacking
+  // context so the preview never renders in front of a modal opened above it.
+  return <div ref={boxRef} className="h-32 rounded-xl overflow-hidden border border-border bg-bg-2 isolate" />
 }
 
 // Consistent section header (icon chip + title) used across the
@@ -427,25 +429,36 @@ function MitarbeiterModal({ user, onClose, onSaved }) {
 function ArbeitszeitConfigModal({ firma, onClose, onSaved }) {
   const { t } = useLanguage()
   const [soll, setSoll] = useState(String(firma.soll_stunden_tag ?? 8))
+  const [pause, setPause] = useState(String(firma.pause_min_default ?? 30))
+  const [maxUe, setMaxUe] = useState(String(firma.max_ueberstunden_tag ?? 0))
   const [busy, setBusy] = useState(false)
   const save = async () => {
     setBusy(true)
-    const val = Math.max(Number(soll) || 0, 0)
-    await supabase.from('firmendaten').update({ soll_stunden_tag: val }).eq('id', 1)
-    setBusy(false); onSaved({ soll_stunden_tag: val })
+    const patch = {
+      soll_stunden_tag: Math.max(Number(soll) || 0, 0),
+      pause_min_default: Math.max(Number(pause) || 0, 0),
+      max_ueberstunden_tag: Math.max(Number(maxUe) || 0, 0),
+    }
+    await supabase.from('firmendaten').update(patch).eq('id', 1)
+    setBusy(false); onSaved(patch)
   }
+  const numField = (label, val, set, unit, hint) => (
+    <div>
+      <label className="block text-xs text-secondary mb-1">{label}</label>
+      <div className="relative">
+        <input type="number" min="0" step={unit === 'min' ? '5' : '0.5'} value={val} onChange={e => set(e.target.value)} className={`${inputCls} pr-10 font-mono`} />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">{unit}</span>
+      </div>
+      {hint && <p className="text-[11px] text-muted mt-1">{hint}</p>}
+    </div>
+  )
   return (
     <Modal title={t('set_adv_zeit')} icon="clock" color="#4caf6e" onClose={onClose}
            footer={<><button onClick={save} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>{busy ? '…' : t('common_save')}</button><button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm text-secondary border border-border hover:bg-bg-2">{t('common_cancel')}</button></>}>
       <p className="text-xs text-secondary">{t('set_adv_zeit_sub')}</p>
-      <div>
-        <label className="block text-xs text-secondary mb-1">{t('set_soll_tag')}</label>
-        <div className="relative">
-          <input type="number" min="0" step="0.5" value={soll} onChange={e => setSoll(e.target.value)} className={`${inputCls} pr-8 font-mono`} />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">h</span>
-        </div>
-        <p className="text-[11px] text-muted mt-1">{t('set_soll_hint')}</p>
-      </div>
+      {numField(t('set_soll_tag'), soll, setSoll, 'h', t('set_soll_hint'))}
+      {numField(t('set_pause_default'), pause, setPause, 'min')}
+      {numField(t('set_max_ueber'), maxUe, setMaxUe, 'h', t('set_max_ueber_hint'))}
     </Modal>
   )
 }
@@ -490,20 +503,62 @@ function SicherheitModal({ firma, users, onClose, onSaved }) {
   const { t } = useLanguage()
   const [pin, setPin] = useState(firma.aenderungs_pin ?? '')
   const [busy, setBusy] = useState(false)
-  const save = async () => {
+  // per-user access change
+  const [uid, setUid] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newPass, setNewPass] = useState('')
+  const [zugBusy, setZugBusy] = useState(false)
+  const [zugMsg, setZugMsg] = useState(null)
+
+  const savePin = async () => {
     setBusy(true)
     await supabase.from('firmendaten').update({ aenderungs_pin: pin.trim() }).eq('id', 1)
     setBusy(false); onSaved({ aenderungs_pin: pin.trim() })
   }
+  const saveZugang = async () => {
+    if (!uid || (!newEmail.trim() && !newPass)) return
+    setZugBusy(true); setZugMsg(null)
+    const { error } = await supabase.rpc('admin_update_user', {
+      p_user_id: uid, p_email: newEmail.trim() || null, p_password: newPass || null,
+    })
+    setZugBusy(false)
+    if (error) { setZugMsg({ err: true, text: error.message }); return }
+    setNewEmail(''); setNewPass('')
+    setZugMsg({ err: false, text: t('set_zugang_saved') })
+    setTimeout(() => setZugMsg(null), 3500)
+  }
+
   return (
-    <Modal title={t('set_adv_security')} icon="eye" color="#9b6bd9" onClose={onClose}
-           footer={<><button onClick={save} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>{busy ? '…' : t('common_save')}</button><button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm text-secondary border border-border hover:bg-bg-2">{t('common_cancel')}</button></>}>
+    <Modal title={t('set_adv_security')} icon="eye" color="#9b6bd9" onClose={onClose}>
+      {/* Änderungs-PIN */}
       <div>
         <label className="block text-xs text-secondary mb-1">{t('set_change_pin')}</label>
-        <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="1234" className={`${inputCls} font-mono`} />
+        <div className="flex gap-2">
+          <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="1234" className={`${inputCls} font-mono flex-1`} />
+          <button onClick={savePin} disabled={busy} className="px-4 rounded-xl text-sm font-semibold disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>{busy ? '…' : t('common_save')}</button>
+        </div>
         <p className="text-[11px] text-muted mt-1">{t('set_pin_hint')}</p>
       </div>
-      <div>
+
+      {/* Zugangsdaten ändern */}
+      <div className="border-t border-border pt-4">
+        <div className="text-sm font-semibold mb-1">{t('set_zugang_titel')}</div>
+        <p className="text-[11px] text-muted mb-2.5">{t('set_zugang_sub')}</p>
+        <select value={uid} onChange={e => setUid(e.target.value)} className={`${inputCls} mb-2`}>
+          <option value="">{t('set_zugang_select')}</option>
+          {users.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+        </select>
+        <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder={t('set_zugang_new_email')} autoComplete="off" className={`${inputCls} mb-2`} />
+        <input type="text" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder={t('set_zugang_new_pass')} autoComplete="off" className={`${inputCls} mb-2 font-mono`} />
+        {zugMsg && <p className={`text-[11px] mb-2 ${zugMsg.err ? 'text-red' : 'text-green'}`}>{zugMsg.text}</p>}
+        <button onClick={saveZugang} disabled={zugBusy || !uid || (!newEmail.trim() && !newPass)}
+                className="w-full py-2 rounded-xl text-sm font-semibold border border-border bg-bg-2 hover:bg-bg-3 disabled:opacity-50 transition-colors">
+          {zugBusy ? '…' : t('set_zugang_save')}
+        </button>
+      </div>
+
+      {/* Zugriffsrechte overview */}
+      <div className="border-t border-border pt-4">
         <div className="text-xs text-secondary mb-2">{t('set_zugriffsrechte')}</div>
         <div className="space-y-1.5">
           {users.map(u => (
@@ -523,7 +578,6 @@ function SicherheitModal({ firma, users, onClose, onSaved }) {
 // editable FirmaCard.
 function FirmendatenView({ firma, onEdit }) {
   const { t } = useLanguage()
-  const [showPin, setShowPin] = useState(false)
   const Field = ({ label, value }) => (
     <div className="min-w-0">
       <div className="text-[11px] text-muted mb-0.5">{label}</div>
@@ -541,17 +595,6 @@ function FirmendatenView({ firma, onEdit }) {
         <Field label={t('lief_field_address')} value={firma.adresse} />
         <Field label={t('set_vat_id')} value={firma.ust_idnr} />
         <Field label={t('lief_field_phone')} value={firma.telefon} />
-        <div className="min-w-0">
-          <div className="text-[11px] text-muted mb-0.5">{t('set_change_pin')}</div>
-          <div className="text-sm font-medium flex items-center gap-2">
-            <span className="font-mono">{firma.aenderungs_pin ? (showPin ? firma.aenderungs_pin : '••••') : '—'}</span>
-            {firma.aenderungs_pin && (
-              <button onClick={() => setShowPin(s => !s)} className="text-muted hover:text-primary">
-                <Icon name={showPin ? 'eyeOff' : 'eye'} size={14} color="currentColor" />
-              </button>
-            )}
-          </div>
-        </div>
         <Field label={t('set_tax_number')} value={firma.steuernummer} />
       </div>
     </Card>
@@ -571,7 +614,10 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
   const rootRef = useRef(null)
   const [tabH, setTabH] = useState(null)
   useEffect(() => {
-    const calc = () => { const el = rootRef.current; if (el) setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 44, 460)) }
+    // Small reserve only — internal scroll areas handle overflow, so the
+    // pinned box can reach (almost) the viewport bottom without a page
+    // scrollbar.
+    const calc = () => { const el = rootRef.current; if (el) setTabH(Math.max(window.innerHeight - el.getBoundingClientRect().top - 12, 460)) }
     calc(); window.addEventListener('resize', calc); return () => window.removeEventListener('resize', calc)
   }, [])
   const [users, setUsers]             = useState([])
@@ -677,7 +723,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
         <p className="text-secondary text-sm">{t('set_page_sub')}</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 xl:flex-1 xl:min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-5 xl:flex-1 xl:min-h-0 xl:grid-rows-1">
         {/* ══ LEFT — Benutzerverwaltung grows, System pinned below ══ */}
         <div className="space-y-5 xl:flex xl:flex-col xl:min-h-0">
           {/* Benutzerverwaltung */}
