@@ -353,9 +353,13 @@ function UserRow({ u, onEdit, deleteUser, confirmDelete, setConfirmDelete }) {
 
 /* ── Small centered modal shell ── */
 function Modal({ title, icon, color, onClose, children, footer }) {
+  // Close only when the press STARTS on the backdrop — otherwise a drag
+  // that begins inside (selecting text, dragging off a field) and ends
+  // on the backdrop would fire a click there and close the dialog.
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-bg-1 border border-border w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl max-h-[92dvh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+         onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-bg-1 border border-border w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl max-h-[92dvh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="text-base font-semibold flex items-center gap-2.5">
             <span className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: (color ?? '#4a90d9') + '1f' }}><Icon name={icon ?? 'settings'} size={14} color={color ?? '#4a90d9'} /></span>
@@ -783,8 +787,8 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
           </Card>
         </div>
 
-        {/* ══ RIGHT ══ */}
-        <div className="space-y-5 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+        {/* ══ RIGHT — fills to the same bottom as the left column ══ */}
+        <div className="space-y-5 xl:flex xl:flex-col xl:min-h-0 xl:overflow-y-auto xl:pr-1">
           {/* Firmendaten */}
           {firmaEdit
             ? <FirmaCard firma={firma} setFirma={setFirma}
@@ -838,8 +842,8 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
             </div>
           </Card>
 
-          {/* Erweiterte Einstellungen */}
-          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          {/* Erweiterte Einstellungen — grows so the column reaches the bottom */}
+          <Card className="p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:flex-1">
             <SectionHead icon="settings" color="#9aa3ad" title={t('set_adv_title')} />
             <p className="text-xs text-secondary mb-3 -mt-2">{t('set_adv_sub')}</p>
             <div className="divide-y divide-border -my-1">

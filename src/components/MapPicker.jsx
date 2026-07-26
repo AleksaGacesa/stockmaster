@@ -61,9 +61,8 @@ export default function MapPicker({ lat, lng, radius = 150, onPick, onClose, tit
 
   return (
     <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-3"
-         onClick={onClose}>
-      <div className="bg-bg-1 border border-border rounded-2xl w-full max-w-2xl overflow-hidden"
-           onClick={e => e.stopPropagation()}>
+         onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-bg-1 border border-border rounded-2xl w-full max-w-2xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="font-semibold text-sm flex items-center gap-2">
             <Icon name="mapPin" size={15} color="#e8821c" /> {title ?? t('map_title')}
