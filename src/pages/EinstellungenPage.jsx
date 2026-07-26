@@ -327,7 +327,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
   return (
     <>
       {/* ══ MOBILE ══ */}
-      <div className="sm:hidden flex flex-col h-[100dvh] overflow-y-auto">
+      <div className="lg:hidden flex flex-col h-[100dvh] overflow-y-auto">
         <div className="p-3 space-y-3">
           <h1 className="text-base font-semibold">{t('set_title')}</h1>
 
@@ -408,7 +408,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
       </div>
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden sm:block p-6 lg:p-8">
+      <div className="hidden lg:block p-6 lg:p-8">
         <div className="mb-5">
           <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('set_title')}</h1>
           <p className="text-secondary text-sm">{t('set_subtitle')}</p>

@@ -1035,7 +1035,7 @@ function VerlaufTab({ moves, initialSearch }) {
       </Card>
 
       {/* Mobile list */}
-      <div className="sm:hidden space-y-1.5">
+      <div className="lg:hidden space-y-1.5">
         {filtered.length === 0 ? (
           <Card className="p-8 text-center text-muted text-sm">{t('bew_no_movements_found')}</Card>
         ) : filtered.map(m => (
@@ -1062,7 +1062,7 @@ function VerlaufTab({ moves, initialSearch }) {
       </div>
 
       {/* Desktop table */}
-      <Card className="hidden sm:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <Card className="hidden lg:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
         {filtered.length === 0 ? (
           <div className="p-10 text-center text-muted text-sm">{t('bew_no_movements_found')}</div>
         ) : (
@@ -1162,7 +1162,7 @@ export default function BewegungPage({ articles, setArticles, moves, setMoves })
   return (
     <>
       {/* ══ MOBILE ══ */}
-      <div className="sm:hidden flex flex-col h-[100dvh]">
+      <div className="lg:hidden flex flex-col h-[100dvh]">
         <div className="flex gap-1 border-b border-border px-3 bg-bg-0">
           {[['buchen', t('bew_tab_buchen'), 'scan'], ['verlauf', t('bew_tab_verlauf'), 'refresh']].map(([id, label, icon]) => (
             <button key={id} onClick={() => setTab(id)}
@@ -1183,7 +1183,7 @@ export default function BewegungPage({ articles, setArticles, moves, setMoves })
       </div>
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden sm:block p-6 lg:p-8">
+      <div className="hidden lg:block p-6 lg:p-8">
         <div className="mb-5 flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('bew_title')}</h1>

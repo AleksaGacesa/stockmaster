@@ -1890,7 +1890,7 @@ function BestellungenTab({ bestellungen, lieferanten, onOpenDetail, initialFilte
         <Card className="p-10 text-center text-muted text-sm">{t('lief_no_orders_found')}</Card>
       ) : (
         <>
-          <div className="sm:hidden space-y-1.5">
+          <div className="lg:hidden space-y-1.5">
             {filtered.map(b => (
               <div key={b.id} onClick={() => onOpenDetail(b.id)}
                    className="bg-bg-1 border border-border rounded-xl px-3 py-2.5">
@@ -1907,7 +1907,7 @@ function BestellungenTab({ bestellungen, lieferanten, onOpenDetail, initialFilte
               </div>
             ))}
           </div>
-          <Card className="hidden sm:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <Card className="hidden lg:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead>
@@ -2105,7 +2105,7 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
   return (
     <>
       {/* ══ MOBILE ══ */}
-      <div className="sm:hidden flex flex-col h-[100dvh]">
+      <div className="lg:hidden flex flex-col h-[100dvh]">
         <div className="px-3 pt-3 pb-2 border-b border-border bg-bg-0">
           <h1 className="text-base font-semibold mb-2">{t('lief_title')}</h1>
           <div className="flex gap-1">
@@ -2126,7 +2126,7 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
       </div>
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden sm:block p-6 lg:p-8">
+      <div className="hidden lg:block p-6 lg:p-8">
         <div className="mb-5 flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('lief_title')}</h1>

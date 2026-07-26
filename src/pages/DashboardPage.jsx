@@ -141,7 +141,7 @@ function MagazinDashboard({ articles, moves }) {
   return (
     <>
       {/* ══ MOBILE ══ */}
-      <div className="sm:hidden space-y-3">
+      <div className="lg:hidden space-y-3">
         <div className="grid grid-cols-2 gap-2">
           {stats.map(s => (
             <Card key={s.label} className="p-3">
@@ -219,7 +219,7 @@ function MagazinDashboard({ articles, moves }) {
       </div>
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden sm:block space-y-6">
+      <div className="hidden lg:block space-y-6">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {stats.map(s => (
             <Card key={s.label} className="p-4 border-t-2 shadow-[0_1px_2px_rgba(0,0,0,0.06)]" style={{ borderTopColor: s.color }}>

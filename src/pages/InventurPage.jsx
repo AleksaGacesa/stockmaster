@@ -422,7 +422,7 @@ function BerichtTab({ session, articles, setArticles, setMoves }) {
       )}
 
       {/* Mobile list */}
-      <div className="sm:hidden space-y-1.5">
+      <div className="lg:hidden space-y-1.5">
         {rows.length === 0 ? (
           <Card className="p-8 text-center text-muted text-sm">{t('inv_none_counted')}</Card>
         ) : rows.map(r => (
@@ -443,7 +443,7 @@ function BerichtTab({ session, articles, setArticles, setMoves }) {
       </div>
 
       {/* Desktop table */}
-      <Card className="hidden sm:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+      <Card className="hidden lg:block overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
         {rows.length === 0 ? (
           <div className="p-10 text-center text-muted text-sm">{t('inv_none_counted')}</div>
         ) : (
@@ -503,7 +503,7 @@ function SessionView({ session, articles, setArticles, setMoves, isManager, onBa
   return (
     <>
       {/* ══ MOBILE ══ */}
-      <div className="sm:hidden flex flex-col h-[100dvh]">
+      <div className="lg:hidden flex flex-col h-[100dvh]">
         <div className="px-3 pt-3 pb-2 border-b border-border bg-bg-0">
           <button onClick={onBack} className="flex items-center gap-1 text-secondary text-xs mb-2">
             <Icon name="chevronLeft" size={14} color="currentColor" /> {t('common_back')}
@@ -551,7 +551,7 @@ function SessionView({ session, articles, setArticles, setMoves, isManager, onBa
       </div>
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden sm:block p-6 lg:p-8">
+      <div className="hidden lg:block p-6 lg:p-8">
         <button onClick={onBack}
                 className="flex items-center gap-1.5 text-secondary text-sm mb-4 hover:text-primary transition-colors">
           <Icon name="chevronLeft" size={16} color="currentColor" /> {t('inv_all_counts')}
@@ -892,7 +892,7 @@ export default function InventurPage({ articles, setArticles, setMoves }) {
   return (
     <>
       {/* ══ MOBILE — simple list, counting stays the focus ══ */}
-      <div className="sm:hidden flex flex-col h-[100dvh] overflow-y-auto">
+      <div className="lg:hidden flex flex-col h-[100dvh] overflow-y-auto">
         <div className="p-3 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-semibold">{t('inv_title')}</h1>
@@ -947,7 +947,7 @@ export default function InventurPage({ articles, setArticles, setMoves }) {
       </div>
 
       {/* ══ DESKTOP — dashboard ══ */}
-      <div className="hidden sm:flex flex-col gap-4 p-6 lg:px-8 lg:py-5 lg:min-h-full">
+      <div className="hidden lg:flex flex-col gap-4 p-6 lg:px-8 lg:py-5 lg:min-h-full">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>

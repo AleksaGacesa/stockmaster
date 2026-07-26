@@ -392,7 +392,7 @@ export default function HomePage({ articles = [], moves = [] }) {
   return (
     <>
       {/* ══ MOBILE ══ */}
-      <div className="sm:hidden overflow-y-auto">
+      <div className="lg:hidden overflow-y-auto">
         <div className="p-3 space-y-3">
           {/* Hero compact */}
           <div className="rounded-xl border border-border p-4 relative overflow-hidden"
@@ -571,7 +571,7 @@ export default function HomePage({ articles = [], moves = [] }) {
       </div>
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden sm:block p-6 lg:px-8 lg:py-5 space-y-3.5">
+      <div className="hidden lg:block p-6 lg:px-8 lg:py-5 space-y-3.5">
         {/* Hero banner — warehouse aisle with a legibility gradient */}
         <div className="relative overflow-hidden rounded-2xl border border-border h-24 lg:h-28 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.5)]">
           <HeroWarehouse />

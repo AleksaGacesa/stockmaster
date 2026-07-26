@@ -369,7 +369,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
   return (
     <>
       {/* ══ MOBILE ══ */}
-      <div className="sm:hidden flex flex-col h-[100dvh]">
+      <div className="lg:hidden flex flex-col h-[100dvh]">
 
         {/* Sticky header */}
         <div className="sticky top-0 z-10 bg-bg-0 border-b border-border px-3 pt-3 pb-2 space-y-2">
@@ -539,7 +539,7 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
       </div>
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden sm:block p-6 lg:p-8">
+      <div className="hidden lg:block p-6 lg:p-8">
         <div className="flex items-start justify-between mb-5 gap-3 flex-wrap">
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('ueb_title')}</h1>
