@@ -359,31 +359,34 @@ function MontageLive({ offen, montagen, onChanged }) {
             </div>
           )}
 
-          {/* ══ BAR 2 — nur Arbeit ══ */}
-          <div className="rounded-xl border p-3" style={{ borderColor: '#4a90d955', background: '#4a90d90d' }}>
-            <div className="flex items-center justify-between gap-2 mb-2.5">
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                <Icon name="settings" size={15} color="#4a90d9" /> {t('mon_bar_arbeit')}
-              </span>
-              {arbeitet
-                ? <LiveDuration since={offen.arbeit_start_at} color="#4a90d9" className="text-sm font-semibold" />
-                : <span className="text-sm font-mono font-semibold text-muted">—</span>}
+          {/* ══ BAR 2 — nur Arbeit; erst nach der Ankunft verfügbar,
+              während der Fahrt bleibt es ausgeblendet ══ */}
+          {!faehrt && (
+            <div className="rounded-xl border p-3" style={{ borderColor: '#4a90d955', background: '#4a90d90d' }}>
+              <div className="flex items-center justify-between gap-2 mb-2.5">
+                <span className="flex items-center gap-2 text-sm font-semibold">
+                  <Icon name="settings" size={15} color="#4a90d9" /> {t('mon_bar_arbeit')}
+                </span>
+                {arbeitet
+                  ? <LiveDuration since={offen.arbeit_start_at} color="#4a90d9" className="text-sm font-semibold" />
+                  : <span className="text-sm font-mono font-semibold text-muted">—</span>}
+              </div>
+              {!offen.arbeit_start_at && (
+                <button onClick={arbeitStarten} disabled={busy}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                        style={{ background: '#4a90d9' }}>
+                  <Icon name="settings" size={15} color="#fff" /> {t('mon_arbeit_start')}
+                </button>
+              )}
+              {arbeitet && (
+                <button onClick={startFinish} disabled={busy}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                        style={{ background: '#4caf6e' }}>
+                  <Icon name="check" size={15} color="#fff" /> {t('mon_feierabend')}
+                </button>
+              )}
             </div>
-            {!offen.arbeit_start_at && (
-              <button onClick={arbeitStarten} disabled={busy}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
-                      style={{ background: '#4a90d9' }}>
-                <Icon name="settings" size={15} color="#fff" /> {t('mon_arbeit_start')}
-              </button>
-            )}
-            {arbeitet && (
-              <button onClick={startFinish} disabled={busy}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
-                      style={{ background: '#4caf6e' }}>
-                <Icon name="check" size={15} color="#fff" /> {t('mon_feierabend')}
-              </button>
-            )}
-          </div>
+          )}
 
           {/* GPS check-in verdict (captured on Angekommen or Arbeit starten) */}
           {(offen.ankunft_at || offen.arbeit_start_at) && offen.projekt?.standort_lat != null && (
