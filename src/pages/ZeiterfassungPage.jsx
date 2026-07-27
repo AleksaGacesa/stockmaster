@@ -254,6 +254,34 @@ function KorrekturModal({ tag, onClose, onSaved }) {
   )
 }
 
+/* ══ small analytics pieces ══ */
+function ArrivalBars({ data, t }) {
+  const max = Math.max(1, ...data.map(d => d.n))
+  return (
+    <div className="flex items-end gap-1.5 h-28">
+      {data.map(d => (
+        <div key={d.h} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+          <span className="text-[9px] text-muted font-mono">{d.n || ''}</span>
+          <div className="w-full rounded-t-md transition-all duration-500"
+               style={{ height: `${(d.n / max) * 84 + (d.n ? 6 : 2)}px`, background: d.n ? '#4a90d9' : 'rgb(var(--bg-3))' }} />
+          <span className="text-[9px] text-muted">{d.h}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function HeatCell({ v, max }) {
+  const alpha = v <= 0 ? 0 : 0.15 + (v / max) * 0.85
+  return (
+    <div className="aspect-square rounded-md flex items-center justify-center text-[9px] font-mono"
+         style={{ background: v > 0 ? `rgba(74,144,217,${alpha})` : 'rgb(var(--bg-2))', color: alpha > 0.6 ? '#fff' : 'rgb(var(--text-muted))' }}
+         title={`${v.toFixed(1)} h`}>
+      {v > 0 ? v.toFixed(1) : ''}
+    </div>
+  )
+}
+
 /* ══ MAIN PAGE ══ */
 export default function ZeiterfassungPage() {
   const { t } = useLanguage()
@@ -270,13 +298,12 @@ export default function ZeiterfassungPage() {
   const [filterArbeiter, setFilterArbeiter] = useState('alle')
   const [search, setSearch] = useState('')
   const [showAllTeam, setShowAllTeam] = useState(false)
-  const [showAllRank, setShowAllRank] = useState(false)
   const [editTag, setEditTag] = useState(null)
 
   const load = useCallback(async () => {
     const [{ data: az }, { data: mon }, { data: prof }, { data: firmaD }, { data: korr }] = await Promise.all([
       supabase.from('arbeitszeiten').select('*').order('datum', { ascending: false }).limit(3000),
-      supabase.from('montagen').select('arbeiter_id, arbeiter_name, datum, abfahrt_at, ankunft_at, arbeit_start_at, ende_at, pause_min').limit(3000),
+      supabase.from('montagen').select('arbeiter_id, arbeiter_name, datum, abfahrt_at, ankunft_at, arbeit_start_at, ende_at, pause_min, projekt_id, ankunft_distanz, projekt:projekte(name)').limit(3000),
       supabase.from('profiles').select('id, display_name, role, stundensatz, vertrag_stunden, vertrag_periode').order('display_name'),
       supabase.from('firmendaten').select('firma_lat, firma_lng, firma_radius, soll_stunden_tag').eq('id', 1).single(),
       supabase.from('arbeitszeit_korrekturen').select('*').order('created_at', { ascending: false }).limit(300),
@@ -379,6 +406,51 @@ export default function ZeiterfassungPage() {
   const ranking = tagFor(selKey).filter(g => g.nettoMin > 0)
     .sort((a, b) => b.nettoMin - a.nettoMin)
 
+  /* ── live operational data (selected day) ── */
+  const heuteAz  = arbeitszeiten.filter(a => a.datum === selKey)
+  const heuteMon = montagen.filter(m => m.datum === selKey)
+  // currently working on a montage site (arbeit_start set, not ended)
+  const laufMon  = heuteMon.filter(m => m.arbeit_start_at && !m.ende_at)
+  const projektOf = (id) => laufMon.find(m => m.arbeiter_id === id)?.projekt?.name ?? null
+  const aufMontage = [...new Map(laufMon.map(m => [m.arbeiter_id, m])).values()]
+    .map(m => ({ id: m.arbeiter_id, name: m.arbeiter_name, projekt: m.projekt?.name }))
+  // on break right now
+  const aufPause = heuteAz.filter(a => !a.gehen_at && pauseLaeuft(a))
+    .map(a => ({ id: a.arbeiter_id, name: a.arbeiter_name }))
+  // most recent check-ins
+  const letzteAnmeldungen = [...arbeitszeiten].filter(a => a.kommen_at)
+    .sort((a, b) => new Date(b.kommen_at) - new Date(a.kommen_at)).slice(0, 10)
+  // GPS: closest recorded distance of the day (attendance + montage)
+  const rowGps = (g) => {
+    const ds = [...g.azList.map(a => a.kommen_distanz), ...g.montagen.map(m => m.ankunft_distanz)].filter(d => d != null)
+    return ds.length ? Math.min(...ds) : null
+  }
+  const gpsRadius = Number(firma?.firma_radius) || 150
+
+  // per-worker week overtime → alerts
+  const inWeek = (dstr) => { const d = new Date(dstr + 'T12:00:00'); return d >= wochenStart(0) && d < wochenStart(-1) }
+  const weekTage = tage.filter(g => inWeek(g.datum))
+  const overByWorker = new Map()
+  weekTage.forEach(g => overByWorker.set(g.arbeiter_id, (overByWorker.get(g.arbeiter_id) ?? 0) + overMin(g)))
+  const alerts = [...overByWorker.entries()].filter(([, m]) => m >= 60)
+    .map(([id, m]) => ({ id, name: profMap.get(id)?.display_name ?? '—', min: m }))
+    .sort((a, b) => b.min - a.min)
+
+  // arrivals by hour (selected day)
+  const arrival = {}
+  heuteAz.forEach(a => { if (a.kommen_at) { const h = new Date(a.kommen_at).getHours(); arrival[h] = (arrival[h] ?? 0) + 1 } })
+  const arrHours = []; for (let h = 5; h <= 12; h++) arrHours.push({ h, n: arrival[h] ?? 0 })
+
+  // heatmap: worker × weekday hours (current week)
+  const weekDays = []; { const s = wochenStart(0); for (let i = 0; i < 7; i++) { const d = new Date(s); d.setDate(d.getDate() + i); weekDays.push(dateKey(d)) } }
+  const heatWorkers = profiles.filter(p => weekTage.some(g => g.arbeiter_id === p.id && g.nettoMin > 0)).slice(0, 8)
+  const heatData = heatWorkers.map(p => ({
+    name: p.display_name,
+    cells: weekDays.map(dk => { const g = tage.find(x => x.arbeiter_id === p.id && x.datum === dk); return g ? g.nettoMin / 60 : 0 }),
+  }))
+  const heatMax = Math.max(1, ...heatData.flatMap(r => r.cells))
+  const abwesendHeute = profiles.length - anwesendCount
+
   const exportExcel = () => {
     const head = [t('zt_col_datum'), t('zt_col_arbeiter'), t('zt_kommen'), t('zt_gehen'), t('zt_pause'), t('zt_col_arbeitszeit'), t('zt_col_ueberstunden')]
     const body = rows.map(r => [fmtDatum(r.datum), r.arbeiter_name, fmtUhr(r.start), r.offen ? '—' : fmtUhr(r.ende), fmtStd(r.pauseMin), fmtStd(r.nettoMin), fmtStdSigned(r.over)])
@@ -445,9 +517,12 @@ export default function ZeiterfassungPage() {
         </div>
       </div>
 
-      {/* stat cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-3 mb-4">
-        <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
+      {/* ══ KPI row ══ */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-3 mb-4">
+        <StatCard label={t('zt_anwesend')} icon="user" color="#4caf6e" value={`${anwesendCount}`} unit={`/ ${profiles.length}`}
+                  sub={`${abwesendHeute} ${t('zt_abwesend').toLowerCase()}`} subColor="rgb(var(--text-muted))" />
+        <StatCard label={t('zt_auf_montage')} icon="truck" color="#e8821c" value={`${aufMontage.length}`}
+                  sub={aufMontage.length ? aufMontage[0].projekt ?? ' ' : ' '} />
         <StatCard label={t('zt_stunden_heute')} icon="clock" color="#4a90d9" value={fmtStd(heuteA.netto)} unit="h"
                   sub={deltaStr(heuteA.netto - gesternA.netto)} subColor={deltaCol(heuteA.netto - gesternA.netto)} spark={nettoSpark} />
         <StatCard label={t('zt_durchschnitt')} icon="user" color="#9b6bd9" value={fmtStd(durchschnittHeute)} unit="h"
@@ -459,8 +534,14 @@ export default function ZeiterfassungPage() {
                   sub={`Ø ${fmtStd(pauseProMa)} ${t('zt_pro_ma')}`} spark={pauseSpark} />
       </div>
 
-      <div className="flex flex-col xl:flex-row gap-4 items-start">
-        {/* table */}
+      {/* ══ CONTROL CENTER — clock · table · live panels ══ */}
+      <div className="flex flex-col xl:flex-row gap-4 items-start mb-4">
+        {/* LEFT — my own punch clock */}
+        <div className="w-full xl:w-72 shrink-0">
+          <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
+        </div>
+
+        {/* CENTER — employee table */}
         <div className="flex-1 min-w-0 w-full">
           <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="flex flex-wrap items-center gap-2 p-3 border-b border-border">
@@ -484,17 +565,23 @@ export default function ZeiterfassungPage() {
                   <thead>
                     <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
                       <th className="px-4 py-2.5 font-medium">{t('zt_col_arbeiter')}</th>
+                      <th className="px-3 py-2.5 font-medium">{t('zt_col_status')}</th>
+                      <th className="px-3 py-2.5 font-medium">{t('zt_col_projekt')}</th>
                       <th className="px-3 py-2.5 font-medium">{t('zt_kommen')}</th>
                       <th className="px-3 py-2.5 font-medium">{t('zt_gehen')}</th>
                       <th className="px-3 py-2.5 font-medium">{t('zt_pause')}</th>
                       <th className="px-3 py-2.5 font-medium">{t('zt_col_arbeitszeit')}</th>
                       <th className="px-3 py-2.5 font-medium">{t('zt_col_ueberstunden')}</th>
-                      <th className="px-3 py-2.5 font-medium">{t('zt_col_status')}</th>
+                      <th className="px-3 py-2.5 font-medium">{t('zt_col_montage')}</th>
+                      <th className="px-3 py-2.5 font-medium">{t('zt_col_gps')}</th>
                       <th className="px-3 py-2.5 font-medium text-right">{t('zt_col_aktionen')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r, i) => (
+                    {rows.map((r, i) => {
+                      const projekt = r.montagen?.find(m => m.projekt?.name)?.projekt?.name ?? null
+                      const gps = rowGps(r)
+                      return (
                       <tr key={`${r.arbeiter_id}-${r.datum}-${i}`} className="border-b border-border last:border-0 hover:bg-bg-2/50 transition-colors">
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2.5">
@@ -505,12 +592,25 @@ export default function ZeiterfassungPage() {
                             </div>
                           </div>
                         </td>
+                        <td className="px-3 py-2.5"><StatusPill status={r.status} /></td>
+                        <td className="px-3 py-2.5 text-xs text-secondary max-w-[130px] truncate">{projekt || '—'}</td>
                         <td className="px-3 py-2.5 font-mono text-xs whitespace-nowrap">{r.start ? fmtUhr(r.start) : '–'}</td>
                         <td className="px-3 py-2.5 font-mono text-xs whitespace-nowrap">{r.start ? (r.offen ? '…' : fmtUhr(r.ende)) : '–'}</td>
                         <td className="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-secondary">{r.start ? fmtStd(r.pauseMin) : '–'}</td>
                         <td className="px-3 py-2.5 font-mono text-xs font-semibold whitespace-nowrap">{fmtStd(r.nettoMin)} h</td>
                         <td className={`px-3 py-2.5 font-mono text-xs whitespace-nowrap ${r.over > 0 ? 'text-amber' : r.over < 0 ? 'text-red' : 'text-muted'}`}>{fmtStdSigned(r.over)} h</td>
-                        <td className="px-3 py-2.5"><StatusPill status={r.status} /></td>
+                        <td className="px-3 py-2.5">
+                          {r.montagen?.length > 0
+                            ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: '#e8821c1a', color: '#e8821c' }}><Icon name="truck" size={10} color="#e8821c" /> {t('zt_col_montage')}</span>
+                            : <span className="text-muted text-xs">–</span>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {gps == null
+                            ? <span className="text-muted text-xs">–</span>
+                            : gps <= gpsRadius
+                              ? <span className="inline-flex items-center gap-1 text-[11px] text-green font-mono"><Icon name="mapPin" size={11} color="rgb(var(--color-green))" />{gps} m</span>
+                              : <span className="inline-flex items-center gap-1 text-[11px] text-red font-mono"><Icon name="alert" size={11} color="rgb(var(--color-red))" />{gps} m</span>}
+                        </td>
                         <td className="px-3 py-2.5 text-right">
                           {r.azList?.length > 0 && (
                             <button onClick={() => setEditTag(r)} className="p-1.5 rounded-lg hover:bg-bg-3 transition-colors" title={t('zt_korrektur_titel')}>
@@ -519,15 +619,16 @@ export default function ZeiterfassungPage() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-border bg-bg-2/40">
                       <td className="px-4 py-3 text-sm font-semibold">{t('zt_summe')}</td>
-                      <td colSpan={3} />
+                      <td colSpan={5} />
                       <td className="px-3 py-3 font-mono text-sm font-bold">{fmtStd(summeNetto)} h</td>
                       <td className={`px-3 py-3 font-mono text-sm font-bold ${summeOver > 0 ? 'text-amber' : summeOver < 0 ? 'text-red' : 'text-muted'}`}>{fmtStdSigned(summeOver)} h</td>
-                      <td colSpan={2} />
+                      <td colSpan={3} />
                     </tr>
                   </tfoot>
                 </table>
@@ -540,19 +641,20 @@ export default function ZeiterfassungPage() {
           </Card>
         </div>
 
-        {/* right panel */}
-        <div className="w-full xl:w-80 shrink-0 space-y-4">
-          {/* Team Status */}
+        {/* RIGHT — live operations */}
+        <div className="w-full xl:w-72 shrink-0 space-y-4">
+          {/* Live Team */}
           <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-sm">{t('zt_team_status')}</h3>
-              <span className="text-[11px] text-muted font-mono">{anwesendCount}/{profiles.length} {t('zt_anwesend').toLowerCase()}</span>
+              <h3 className="font-semibold text-sm flex items-center gap-2"><StatusDot color="#4caf6e" pulse size={8} /> {t('zt_live_team')}</h3>
+              <span className="text-[11px] text-muted font-mono">{anwesendCount}/{profiles.length}</span>
             </div>
             <div className="space-y-0.5">
               {(showAllTeam ? teamList : teamList.slice(0, 6)).map(u => (
                 <div key={u.id} className="flex items-center gap-2.5 px-1 py-1.5">
                   <StatusDot color={u.anwesend ? '#4caf6e' : '#9aa3ad'} pulse={u.anwesend} size={8} />
                   <span className={`flex-1 min-w-0 truncate text-sm ${u.anwesend ? 'text-primary' : 'text-muted'}`}>{u.display_name}</span>
+                  {projektOf(u.id) && <span className="text-[10px] text-amber truncate max-w-[80px]">{projektOf(u.id)}</span>}
                   <span className="text-[10px] text-muted shrink-0">{roleLabel(u.role)}</span>
                 </div>
               ))}
@@ -564,28 +666,101 @@ export default function ZeiterfassungPage() {
             )}
           </Card>
 
-          {/* Top Arbeitszeit heute */}
+          {/* Auf Pause + Auf Montage */}
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="p-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+              <h3 className="text-[11px] font-semibold text-secondary flex items-center gap-1.5 mb-2"><Icon name="refresh" size={12} color="#3fb6c4" /> {t('zt_auf_pause')}</h3>
+              {aufPause.length === 0 ? <p className="text-[11px] text-muted">{t('zt_niemand')}</p> : (
+                <div className="space-y-1.5">{aufPause.slice(0, 5).map(w => (
+                  <div key={w.id} className="flex items-center gap-1.5"><Avatar name={w.name} size={20} /><span className="text-xs truncate">{w.name}</span></div>
+                ))}</div>
+              )}
+            </Card>
+            <Card className="p-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+              <h3 className="text-[11px] font-semibold text-secondary flex items-center gap-1.5 mb-2"><Icon name="truck" size={12} color="#e8821c" /> {t('zt_auf_montage')}</h3>
+              {aufMontage.length === 0 ? <p className="text-[11px] text-muted">{t('zt_niemand')}</p> : (
+                <div className="space-y-1.5">{aufMontage.slice(0, 5).map(w => (
+                  <div key={w.id} className="flex items-center gap-1.5"><Avatar name={w.name} size={20} /><span className="text-xs truncate">{w.name}</span></div>
+                ))}</div>
+              )}
+            </Card>
+          </div>
+
+          {/* Überstunden-Alarm */}
           <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <h3 className="font-semibold text-sm mb-3">{t('zt_top_arbeitszeit')}</h3>
-            {ranking.length === 0 ? <p className="text-xs text-muted text-center py-3">{t('zt_keine')}</p> : (
+            <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="alarm" size={15} color="#e0524a" /> {t('zt_ueberstunden_alarm')}</h3>
+            {alerts.length === 0 ? <p className="text-xs text-muted text-center py-2">{t('zt_keine_alarme')}</p> : (
               <div className="space-y-2">
-                {(showAllRank ? ranking : ranking.slice(0, 3)).map((g, i) => (
-                  <div key={g.arbeiter_id} className="flex items-center gap-2.5">
-                    <span className={`w-5 text-center text-xs font-bold ${i === 0 ? 'text-amber' : 'text-muted'}`}>{i + 1}</span>
-                    <Avatar name={g.arbeiter_name} size={28} />
-                    <span className="flex-1 min-w-0 truncate text-sm">{g.arbeiter_name}</span>
-                    <span className={`text-sm font-mono font-semibold shrink-0 ${i === 0 ? 'text-amber' : ''}`}>{fmtStd(g.nettoMin)} h</span>
+                {alerts.slice(0, 5).map(a => (
+                  <div key={a.id} className="flex items-center gap-2.5">
+                    <Avatar name={a.name} size={26} />
+                    <span className="flex-1 min-w-0 truncate text-sm">{a.name}</span>
+                    <span className="text-sm font-mono font-bold text-amber shrink-0">+{fmtStd(a.min)} h</span>
                   </div>
                 ))}
               </div>
             )}
-            {ranking.length > 3 && (
-              <button onClick={() => setShowAllRank(s => !s)} className="w-full flex items-center justify-center gap-1.5 text-xs text-secondary border border-border rounded-lg py-2 mt-3 hover:bg-bg-2 transition-colors">
-                <Icon name="chart" size={12} color="currentColor" /> {showAllRank ? t('mon_weniger_akt') : t('zt_ranking')}
-              </button>
+          </Card>
+
+          {/* Letzte Anmeldungen */}
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="clock" size={15} color="#9b6bd9" /> {t('zt_letzte_anmeldungen')}</h3>
+            {letzteAnmeldungen.length === 0 ? <p className="text-xs text-muted text-center py-2">{t('zt_keine')}</p> : (
+              <div className="space-y-2">
+                {letzteAnmeldungen.map((a, i) => (
+                  <div key={`${a.id}-${i}`} className="flex items-center gap-2.5">
+                    <Avatar name={a.arbeiter_name} size={24} />
+                    <span className="flex-1 min-w-0 truncate text-xs">{a.arbeiter_name}</span>
+                    <span className="text-[11px] font-mono text-muted shrink-0">{fmtUhr(a.kommen_at)}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </Card>
         </div>
+      </div>
+
+      {/* ══ ANALYTICS ══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Heatmap */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] lg:col-span-2">
+          <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="chart" size={15} color="#4a90d9" /> {t('zt_heatmap')}</h3>
+          {heatData.length === 0 ? <p className="text-xs text-muted text-center py-6">{t('zt_keine')}</p> : (
+            <div className="overflow-x-auto">
+              <div className="min-w-[420px] space-y-1">
+                <div className="grid gap-1 items-center" style={{ gridTemplateColumns: '96px repeat(7,1fr)' }}>
+                  <span />
+                  {weekDays.map(dk => <span key={dk} className="text-[10px] text-muted text-center capitalize">{new Intl.DateTimeFormat('de-DE', { weekday: 'short' }).format(new Date(dk + 'T12:00:00'))}</span>)}
+                </div>
+                {heatData.map(row => (
+                  <div key={row.name} className="grid gap-1 items-center" style={{ gridTemplateColumns: '96px repeat(7,1fr)' }}>
+                    <span className="text-xs truncate pr-1">{row.name}</span>
+                    {row.cells.map((v, i) => <HeatCell key={i} v={v} max={heatMax} />)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Ankünfte nach Uhrzeit */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="clock" size={15} color="#4a90d9" /> {t('zt_ankuenfte')}</h3>
+          <ArrivalBars data={arrHours} t={t} />
+          <div className="flex items-center justify-between text-[11px] text-muted mt-2 pt-2 border-t border-border">
+            <span>{t('zt_top_arbeitszeit')}</span>
+          </div>
+          <div className="space-y-1.5 mt-2">
+            {ranking.slice(0, 3).map((g, i) => (
+              <div key={g.arbeiter_id} className="flex items-center gap-2">
+                <span className={`w-4 text-center text-xs font-bold ${i === 0 ? 'text-amber' : 'text-muted'}`}>{i + 1}</span>
+                <span className="flex-1 min-w-0 truncate text-xs">{g.arbeiter_name}</span>
+                <span className={`text-xs font-mono font-semibold ${i === 0 ? 'text-amber' : ''}`}>{fmtStd(g.nettoMin)} h</span>
+              </div>
+            ))}
+            {ranking.length === 0 && <p className="text-xs text-muted text-center py-1">{t('zt_keine')}</p>}
+          </div>
+        </Card>
       </div>
 
       {editTag && <KorrekturModal tag={editTag} onClose={() => setEditTag(null)} onSaved={() => { setEditTag(null); load() }} />}
