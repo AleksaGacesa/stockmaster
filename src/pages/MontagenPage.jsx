@@ -1093,9 +1093,9 @@ export default function MontagenPage() {
 
         {/* ══ RIGHT PANEL — activity card grows so the column fills the
             same height as the main one ══ */}
-        <div className="w-full xl:w-80 shrink-0 flex flex-col gap-4 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+        <div className="w-full xl:w-80 shrink-0 flex flex-col gap-4 xl:gap-3 xl:min-h-0 xl:overflow-hidden">
           {/* live */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm flex items-center gap-2">
                 <StatusDot color="#4caf6e" pulse size={8} /> {t('mon_live')}
@@ -1128,20 +1128,21 @@ export default function MontagenPage() {
             )}
           </Card>
 
-          {/* donut */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          {/* progress + cost — merged into one compact card so the column
+              fits on screen without scrolling */}
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
             <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
               <Icon name="chart" size={15} color="#4caf6e" /> {t('mon_fortschritt_gesamt')}
             </h3>
             <div className="flex items-center gap-4">
               <div className="relative shrink-0">
-                <DonutChart data={donutData} size={110} />
+                <DonutChart data={donutData} size={96} />
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-lg font-bold font-mono">{gesamtFort}%</span>
+                  <span className="text-base font-bold font-mono">{gesamtFort}%</span>
                   <span className="text-[9px] text-muted">{t('mon_gesamt')}</span>
                 </div>
               </div>
-              <div className="space-y-1.5 flex-1 min-w-0">
+              <div className="space-y-1 flex-1 min-w-0">
                 {donutData.map(d => {
                   const total = donutData.reduce((s, x) => s + x.value, 0) || 1
                   return (
@@ -1154,17 +1155,10 @@ export default function MontagenPage() {
                 })}
               </div>
             </div>
-          </Card>
-
-          {/* cost overview */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
-              <Icon name="chart" size={15} color="#e8821c" /> {t('mon_kosten_uebersicht')}
-            </h3>
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-2 text-xs border-t border-border mt-3 pt-3">
               {[
-                { label: t('mon_arbeitskosten'),    value: monatArbeitskosten },
-                { label: t('mon_materialkosten'),   value: monatMaterial },
+                { label: t('mon_arbeitskosten'),     value: monatArbeitskosten },
+                { label: t('mon_materialkosten'),    value: monatMaterial },
                 { label: t('mon_fahrtkosten_short'), value: monatFahrtkosten },
               ].map(r => (
                 <div key={r.label} className="flex items-center justify-between gap-3">
@@ -1172,25 +1166,25 @@ export default function MontagenPage() {
                   <span className="font-mono font-medium">{fmt(r.value)}</span>
                 </div>
               ))}
-              <div className="flex items-center justify-between gap-3 border-t border-border pt-2.5">
+              <div className="flex items-center justify-between gap-3 border-t border-border pt-2">
                 <span className="font-medium">{t('mon_gesamt')}</span>
                 <span className="font-mono font-bold text-amber">{fmt(monatGesamt)}</span>
               </div>
             </div>
           </Card>
 
-          {/* activity feed — capped to ~3 rows with its own scroll so the
-              whole right column doesn't need a scrollbar */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
+          {/* activity feed — absorbs the leftover column height and scrolls
+              inside itself, so the column (and page) never scrolls */}
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:flex-1 xl:min-h-0 xl:flex xl:flex-col">
+            <h3 className="font-semibold text-sm flex items-center gap-2 mb-3 xl:shrink-0">
               <Icon name="clock" size={15} color="#9b6bd9" /> {t('mon_aktivitaeten')}
             </h3>
             {activities.length === 0 ? (
               <p className="text-xs text-muted text-center py-4">{t('mon_keine')}</p>
             ) : (
               <>
-                <div className="space-y-2.5 xl:max-h-[150px] xl:overflow-y-auto xl:pr-1">
-                  {activities.slice(0, showAllAct ? 20 : 6).map((a, i) => (
+                <div className="space-y-2.5 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+                  {activities.slice(0, showAllAct ? 30 : 12).map((a, i) => (
                     <div key={`${a.at}-${i}`} className="flex items-start gap-2.5 animate-fade-up" style={{ animationDelay: `${i * 30}ms` }}>
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
                            style={{ background: a.color + '1f' }}>
@@ -1205,7 +1199,7 @@ export default function MontagenPage() {
                   ))}
                 </div>
                 <button onClick={() => setShowAllAct(s => !s)}
-                        className="w-full flex items-center justify-center gap-1.5 text-xs text-secondary border border-border rounded-lg py-2 mt-3 hover:bg-bg-2 transition-colors">
+                        className="w-full flex items-center justify-center gap-1.5 text-xs text-secondary border border-border rounded-lg py-2 mt-3 hover:bg-bg-2 transition-colors xl:shrink-0">
                   {showAllAct ? t('mon_weniger_akt') : t('mon_alle_akt')}
                   <Icon name="chevronRight" size={12} color="currentColor" />
                 </button>
@@ -1215,10 +1209,10 @@ export default function MontagenPage() {
 
           {/* rates (owner) */}
           {isOwner && (
-            <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
               <h3 className="font-semibold text-sm mb-3">{t('mon_saetze')}</h3>
               <div className="space-y-2">
-                <div className="space-y-2 xl:max-h-[192px] xl:overflow-y-auto xl:pr-1">
+                <div className="space-y-2 xl:max-h-[140px] xl:overflow-y-auto xl:pr-1">
                   {profiles.map(p => (
                     <div key={p.id} className="flex items-center gap-2">
                       <span className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
