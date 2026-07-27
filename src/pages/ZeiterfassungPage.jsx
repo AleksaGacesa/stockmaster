@@ -297,7 +297,6 @@ export default function ZeiterfassungPage() {
   const [period, setPeriod] = useState('woche')          // tag | woche | monat
   const [filterArbeiter, setFilterArbeiter] = useState('alle')
   const [search, setSearch] = useState('')
-  const [showAllTeam, setShowAllTeam] = useState(false)
   const [editTag, setEditTag] = useState(null)
 
   const load = useCallback(async () => {
@@ -534,17 +533,12 @@ export default function ZeiterfassungPage() {
                   sub={`Ø ${fmtStd(pauseProMa)} ${t('zt_pro_ma')}`} spark={pauseSpark} />
       </div>
 
-      {/* ══ CONTROL CENTER — clock · table · live panels ══ */}
-      <div className="flex flex-col xl:flex-row gap-4 items-start mb-4">
-        {/* LEFT — my own punch clock */}
-        <div className="w-full xl:w-72 shrink-0">
-          <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
-        </div>
-
-        {/* CENTER — employee table */}
-        <div className="flex-1 min-w-0 w-full">
-          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <div className="flex flex-wrap items-center gap-2 p-3 border-b border-border">
+      {/* ══ MAIN — table + live rail, equal height ══ */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4 xl:h-[544px]">
+        {/* table */}
+        <div className="xl:col-span-2 min-w-0 min-h-0">
+          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-full flex flex-col">
+            <div className="flex flex-wrap items-center gap-2 p-3 border-b border-border shrink-0">
               <h3 className="font-semibold text-sm mr-auto">{t('zt_table_titel')}</h3>
               <div className="relative">
                 <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"><Icon name="search" size={13} color="#6b7480" /></div>
@@ -559,8 +553,8 @@ export default function ZeiterfassungPage() {
                 {periodOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
-            {rows.length === 0 ? <p className="text-sm text-muted text-center py-10">{t('zt_keine')}</p> : (
-              <div className="overflow-x-auto">
+            {rows.length === 0 ? <p className="text-sm text-muted text-center py-10 flex-1">{t('zt_keine')}</p> : (
+              <div className="overflow-auto flex-1 min-h-0">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
@@ -634,23 +628,25 @@ export default function ZeiterfassungPage() {
                 </table>
               </div>
             )}
-            <div className="flex items-center justify-center gap-2 px-4 py-2.5 border-t border-border text-[11px] text-muted">
+            <div className="flex items-center justify-center gap-2 px-4 py-2.5 border-t border-border text-[11px] text-muted shrink-0">
               {t('zt_letzte_akt')}: {lastUpdate ? fmtUhr(lastUpdate) : '—'} <button onClick={load} className="hover:text-primary"><Icon name="refresh" size={12} color="currentColor" /></button>
               <span className="mx-1">·</span><StatusDot color="#4caf6e" pulse size={6} /> {t('zt_auto_akt')}
             </div>
           </Card>
         </div>
 
-        {/* RIGHT — live operations */}
-        <div className="w-full xl:w-72 shrink-0 space-y-4">
-          {/* Live Team */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <div className="flex items-center justify-between mb-3">
+        {/* RIGHT rail — clock + live team, same height as the table */}
+        <div className="min-w-0 min-h-0 flex flex-col gap-4">
+          <div className="shrink-0">
+            <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
+          </div>
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 min-h-0 flex flex-col">
+            <div className="flex items-center justify-between mb-3 shrink-0">
               <h3 className="font-semibold text-sm flex items-center gap-2"><StatusDot color="#4caf6e" pulse size={8} /> {t('zt_live_team')}</h3>
               <span className="text-[11px] text-muted font-mono">{anwesendCount}/{profiles.length}</span>
             </div>
-            <div className="space-y-0.5">
-              {(showAllTeam ? teamList : teamList.slice(0, 6)).map(u => (
+            <div className="space-y-0.5 flex-1 min-h-0 overflow-y-auto pr-1">
+              {teamList.map(u => (
                 <div key={u.id} className="flex items-center gap-2.5 px-1 py-1.5">
                   <StatusDot color={u.anwesend ? '#4caf6e' : '#9aa3ad'} pulse={u.anwesend} size={8} />
                   <span className={`flex-1 min-w-0 truncate text-sm ${u.anwesend ? 'text-primary' : 'text-muted'}`}>{u.display_name}</span>
@@ -659,71 +655,50 @@ export default function ZeiterfassungPage() {
                 </div>
               ))}
             </div>
-            {teamList.length > 6 && (
-              <button onClick={() => setShowAllTeam(s => !s)} className="w-full flex items-center justify-center gap-1.5 text-xs text-secondary border border-border rounded-lg py-2 mt-3 hover:bg-bg-2 transition-colors">
-                <Icon name="user" size={12} color="currentColor" /> {showAllTeam ? t('mon_weniger_akt') : t('zt_alle_mitarbeiter')}
-              </button>
-            )}
-          </Card>
-
-          {/* Auf Pause + Auf Montage */}
-          <div className="grid grid-cols-2 gap-4">
-            <Card className="p-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-              <h3 className="text-[11px] font-semibold text-secondary flex items-center gap-1.5 mb-2"><Icon name="refresh" size={12} color="#3fb6c4" /> {t('zt_auf_pause')}</h3>
-              {aufPause.length === 0 ? <p className="text-[11px] text-muted">{t('zt_niemand')}</p> : (
-                <div className="space-y-1.5">{aufPause.slice(0, 5).map(w => (
-                  <div key={w.id} className="flex items-center gap-1.5"><Avatar name={w.name} size={20} /><span className="text-xs truncate">{w.name}</span></div>
-                ))}</div>
-              )}
-            </Card>
-            <Card className="p-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-              <h3 className="text-[11px] font-semibold text-secondary flex items-center gap-1.5 mb-2"><Icon name="truck" size={12} color="#e8821c" /> {t('zt_auf_montage')}</h3>
-              {aufMontage.length === 0 ? <p className="text-[11px] text-muted">{t('zt_niemand')}</p> : (
-                <div className="space-y-1.5">{aufMontage.slice(0, 5).map(w => (
-                  <div key={w.id} className="flex items-center gap-1.5"><Avatar name={w.name} size={20} /><span className="text-xs truncate">{w.name}</span></div>
-                ))}</div>
-              )}
-            </Card>
-          </div>
-
-          {/* Überstunden-Alarm */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="alarm" size={15} color="#e0524a" /> {t('zt_ueberstunden_alarm')}</h3>
-            {alerts.length === 0 ? <p className="text-xs text-muted text-center py-2">{t('zt_keine_alarme')}</p> : (
-              <div className="space-y-2">
-                {alerts.slice(0, 5).map(a => (
-                  <div key={a.id} className="flex items-center gap-2.5">
-                    <Avatar name={a.name} size={26} />
-                    <span className="flex-1 min-w-0 truncate text-sm">{a.name}</span>
-                    <span className="text-sm font-mono font-bold text-amber shrink-0">+{fmtStd(a.min)} h</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          {/* Letzte Anmeldungen */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-            <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="clock" size={15} color="#9b6bd9" /> {t('zt_letzte_anmeldungen')}</h3>
-            {letzteAnmeldungen.length === 0 ? <p className="text-xs text-muted text-center py-2">{t('zt_keine')}</p> : (
-              <div className="space-y-2">
-                {letzteAnmeldungen.map((a, i) => (
-                  <div key={`${a.id}-${i}`} className="flex items-center gap-2.5">
-                    <Avatar name={a.arbeiter_name} size={24} />
-                    <span className="flex-1 min-w-0 truncate text-xs">{a.arbeiter_name}</span>
-                    <span className="text-[11px] font-mono text-muted shrink-0">{fmtUhr(a.kommen_at)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </Card>
         </div>
+      </div>
+
+      {/* ══ OPS strip — four equal live cards ══ */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[196px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary flex items-center gap-1.5 mb-2 shrink-0"><Icon name="refresh" size={13} color="#3fb6c4" /> {t('zt_auf_pause')}</h3>
+          {aufPause.length === 0 ? <p className="text-xs text-muted">{t('zt_niemand')}</p> : (
+            <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0 pr-1">{aufPause.map(w => (
+              <div key={w.id} className="flex items-center gap-2"><Avatar name={w.name} size={22} /><span className="text-xs truncate">{w.name}</span></div>
+            ))}</div>
+          )}
+        </Card>
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[196px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary flex items-center gap-1.5 mb-2 shrink-0"><Icon name="truck" size={13} color="#e8821c" /> {t('zt_auf_montage')}</h3>
+          {aufMontage.length === 0 ? <p className="text-xs text-muted">{t('zt_niemand')}</p> : (
+            <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0 pr-1">{aufMontage.map(w => (
+              <div key={w.id} className="flex items-center gap-2 min-w-0"><Avatar name={w.name} size={22} /><span className="text-xs truncate flex-1">{w.name}</span>{w.projekt && <span className="text-[10px] text-amber truncate max-w-[64px]">{w.projekt}</span>}</div>
+            ))}</div>
+          )}
+        </Card>
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[196px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary flex items-center gap-1.5 mb-2 shrink-0"><Icon name="alarm" size={13} color="#e0524a" /> {t('zt_ueberstunden_alarm')}</h3>
+          {alerts.length === 0 ? <p className="text-xs text-muted">{t('zt_keine_alarme')}</p> : (
+            <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">{alerts.map(a => (
+              <div key={a.id} className="flex items-center gap-2"><Avatar name={a.name} size={22} /><span className="flex-1 min-w-0 truncate text-xs">{a.name}</span><span className="text-xs font-mono font-bold text-amber shrink-0">+{fmtStd(a.min)}</span></div>
+            ))}</div>
+          )}
+        </Card>
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[196px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary flex items-center gap-1.5 mb-2 shrink-0"><Icon name="clock" size={13} color="#9b6bd9" /> {t('zt_letzte_anmeldungen')}</h3>
+          {letzteAnmeldungen.length === 0 ? <p className="text-xs text-muted">{t('zt_keine')}</p> : (
+            <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0 pr-1">{letzteAnmeldungen.map((a, i) => (
+              <div key={`${a.id}-${i}`} className="flex items-center gap-2"><Avatar name={a.arbeiter_name} size={22} /><span className="flex-1 min-w-0 truncate text-xs">{a.arbeiter_name}</span><span className="text-[11px] font-mono text-muted shrink-0">{fmtUhr(a.kommen_at)}</span></div>
+            ))}</div>
+          )}
+        </Card>
       </div>
 
       {/* ══ ANALYTICS ══ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Heatmap */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] lg:col-span-2">
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] lg:col-span-2 h-full">
           <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="chart" size={15} color="#4a90d9" /> {t('zt_heatmap')}</h3>
           {heatData.length === 0 ? <p className="text-xs text-muted text-center py-6">{t('zt_keine')}</p> : (
             <div className="overflow-x-auto">
@@ -744,7 +719,7 @@ export default function ZeiterfassungPage() {
         </Card>
 
         {/* Ankünfte nach Uhrzeit */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-full">
           <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="clock" size={15} color="#4a90d9" /> {t('zt_ankuenfte')}</h3>
           <ArrivalBars data={arrHours} t={t} />
           <div className="flex items-center justify-between text-[11px] text-muted mt-2 pt-2 border-t border-border">
