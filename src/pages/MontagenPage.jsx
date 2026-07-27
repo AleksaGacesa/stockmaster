@@ -239,13 +239,9 @@ function MontageLive({ offen, montagen, onChanged }) {
   const [busy, setBusy] = useState(false)
   const [finishing, setFinishing] = useState(false)
   const [pause, setPause] = useState('0')
-  const [km, setKm] = useState('')
+  const [km, setKm] = useState('')          // gefahrene km, erfasst bei "Angekommen"
   const [fortschritt, setFortschritt] = useState(0)
   const [notiz, setNotiz] = useState('')
-  // Feierabend only ends the DAY — multi-day montages continue
-  // tomorrow. This explicit toggle is what marks the whole montage
-  // finished (progress jumps to 100%).
-  const [fertig, setFertig] = useState(false)
 
   const status = monStatus(offen)
   const meta = MON_META[status]
@@ -253,20 +249,13 @@ function MontageLive({ offen, montagen, onChanged }) {
   const faehrt   = offen.abfahrt_at && !offen.ankunft_at        // driving right now
   const arbeitet = offen.arbeit_start_at && !offen.ende_at      // working right now
 
-  const abfahrtStarten = async () => {
-    setBusy(true)
-    await supabase.from('montagen').update({ abfahrt_at: new Date().toISOString() }).eq('id', offen.id)
-    setBusy(false)
-    onChanged()
-  }
-
   // Prefill the slider with the last progress anyone reported for
   // this project, so the worker adjusts instead of guessing from 0.
   const startFinish = () => {
     const letzte = montagen.find(m =>
       m.projekt_id === offen.projekt_id && m.ende_at && m.fortschritt !== null)
     setFortschritt(letzte?.fortschritt ?? 0)
-    setPause('0'); setKm(''); setNotiz(''); setFertig(false)
+    setPause('0'); setNotiz('')
     setFinishing(true)
   }
 
@@ -275,11 +264,13 @@ function MontageLive({ offen, montagen, onChanged }) {
   // the radius (or GPS off) the check-in still goes through — the boss
   // just sees it flagged; a hard block would strand workers with a
   // weak signal on site.
+  // Arrival ends the drive — the km belong here, to the trip, not to the
+  // Feierabend/work form.
   const angekommen = async () => {
     setBusy(true)
-    const patch = { ankunft_at: new Date().toISOString(), ...(await checkinPatch(offen.projekt)) }
+    const patch = { ankunft_at: new Date().toISOString(), km: Math.max(Number(km) || 0, 0), ...(await checkinPatch(offen.projekt)) }
     await supabase.from('montagen').update(patch).eq('id', offen.id)
-    setBusy(false)
+    setBusy(false); setKm('')
     onChanged()
   }
 
@@ -304,7 +295,6 @@ function MontageLive({ offen, montagen, onChanged }) {
     await supabase.from('montagen').update({
       ende_at: new Date().toISOString(),
       pause_min: Math.max(Number(pause) || 0, 0),
-      km: Math.max(Number(km) || 0, 0),
       fortschritt: fortschritt,
       notiz: notiz.trim(),
       stundensatz: Number(me?.stundensatz ?? 0),
@@ -333,36 +323,41 @@ function MontageLive({ offen, montagen, onChanged }) {
 
       {!finishing ? (
         <div className="space-y-2.5">
-          {/* ══ BAR 1 — nur Anfahrt (Fahrt) ══ */}
-          <div className="rounded-xl border p-3" style={{ borderColor: '#e8821c55', background: '#e8821c0d' }}>
-            <div className="flex items-center justify-between gap-2 mb-2.5">
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                <Icon name="truck" size={15} color="#e8821c" /> {t('mon_bar_anfahrt')}
-              </span>
-              {faehrt
-                ? <LiveDuration since={offen.abfahrt_at} color="#e8821c" className="text-sm font-semibold" />
-                : <span className="text-sm font-mono font-semibold">{offen.ankunft_at ? fmtMin(fahrzeitMin(offen)) : '—'}</span>}
-            </div>
-            {!offen.abfahrt_at && !offen.ankunft_at && (
-              <button onClick={abfahrtStarten} disabled={busy}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50"
-                      style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-                <Icon name="truck" size={15} color="#181c20" /> {t('mon_abfahrt')}
-              </button>
-            )}
-            {faehrt && (
-              <button onClick={angekommen} disabled={busy}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
-                      style={{ background: '#3fb6c4' }}>
-                <Icon name="mapPin" size={15} color="#fff" /> {t('mon_angekommen')}
-              </button>
-            )}
-            {offen.ankunft_at && (
-              <div className="flex items-center gap-1.5 text-[11px] text-green">
-                <Icon name="check" size={12} color="rgb(var(--color-green))" /> {t('mon_angekommen_um')} {fmtUhr(offen.ankunft_at)}
+          {/* ══ BAR 1 — nur Anfahrt (Fahrt); nur sichtbar wenn eine
+              Abfahrt gestartet wurde ══ */}
+          {offen.abfahrt_at && (
+            <div className="rounded-xl border p-3" style={{ borderColor: '#e8821c55', background: '#e8821c0d' }}>
+              <div className="flex items-center justify-between gap-2 mb-2.5">
+                <span className="flex items-center gap-2 text-sm font-semibold">
+                  <Icon name="truck" size={15} color="#e8821c" /> {t('mon_bar_anfahrt')}
+                </span>
+                {faehrt
+                  ? <LiveDuration since={offen.abfahrt_at} color="#e8821c" className="text-sm font-semibold" />
+                  : <span className="text-sm font-mono font-semibold">{fmtMin(fahrzeitMin(offen))}</span>}
               </div>
-            )}
-          </div>
+              {faehrt && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-secondary flex-1">{t('mon_km')}</span>
+                    <input type="number" min="0" value={km} onChange={e => setKm(e.target.value)} placeholder="0"
+                           className="w-24 bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-sm font-mono text-right outline-none focus:border-amber" />
+                    <span className="text-[11px] text-muted">km</span>
+                  </div>
+                  <button onClick={angekommen} disabled={busy}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                          style={{ background: '#3fb6c4' }}>
+                    <Icon name="mapPin" size={15} color="#fff" /> {t('mon_angekommen')}
+                  </button>
+                </div>
+              )}
+              {offen.ankunft_at && (
+                <div className="flex items-center gap-1.5 text-[11px] text-green">
+                  <Icon name="check" size={12} color="rgb(var(--color-green))" /> {t('mon_angekommen_um')} {fmtUhr(offen.ankunft_at)}
+                  {Number(offen.km) > 0 && <span className="text-muted">· {Number(offen.km)} km</span>}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ══ BAR 2 — nur Arbeit ══ */}
           <div className="rounded-xl border p-3" style={{ borderColor: '#4a90d955', background: '#4a90d90d' }}>
@@ -414,47 +409,21 @@ function MontageLive({ offen, montagen, onChanged }) {
         </div>
       ) : (
         <div className="space-y-3 border-t border-border pt-4">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs text-secondary mb-1">{t('mon_pause')}</label>
-              <input type="number" min="0" value={pause} onChange={e => setPause(e.target.value)}
-                     className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
-            </div>
-            <div>
-              <label className="block text-xs text-secondary mb-1">{t('mon_km')}</label>
-              <input type="number" min="0" value={km} onChange={e => setKm(e.target.value)} placeholder="0"
-                     className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
-            </div>
+          <div>
+            <label className="block text-xs text-secondary mb-1">{t('mon_pause')}</label>
+            <input type="number" min="0" value={pause} onChange={e => setPause(e.target.value)}
+                   className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
           </div>
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs text-secondary">{t('mon_fortschritt')}</label>
               <span className="text-sm font-mono font-bold text-amber">{fortschritt}%</span>
             </div>
-            <input type="range" min="0" max="100" step="5" value={fortschritt} disabled={fertig}
+            <input type="range" min="0" max="100" step="5" value={fortschritt}
                    onChange={e => setFortschritt(Number(e.target.value))}
-                   className="w-full accent-[#e8821c] disabled:opacity-50" />
-            <FortschrittBar pct={fortschritt} color={fertig ? '#4caf6e' : '#e8821c'} />
+                   className="w-full accent-[#e8821c]" />
+            <FortschrittBar pct={fortschritt} color="#e8821c" />
           </div>
-          {/* End of day ≠ end of montage — this toggle is the explicit
-              "site is finished" for the last day. */}
-          <button type="button" onClick={() => {
-                    setFertig(f => {
-                      const next = !f
-                      if (next) setFortschritt(100)
-                      return next
-                    })
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm transition-all"
-                  style={fertig
-                    ? { background: 'var(--color-green-dim)', borderColor: 'rgb(var(--color-green))', color: 'rgb(var(--color-green))' }
-                    : { background: 'rgb(var(--bg-2))', borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>
-            <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
-              fertig ? 'bg-green border-green' : 'border-border-strong bg-bg-1'}`}>
-              {fertig && <Icon name="check" size={12} color="#fff" />}
-            </span>
-            {t('mon_fertig_frage')}
-          </button>
           <div>
             <label className="block text-xs text-secondary mb-1">{t('mon_notiz')}</label>
             <textarea value={notiz} onChange={e => setNotiz(e.target.value)} rows={2}
@@ -463,9 +432,9 @@ function MontageLive({ offen, montagen, onChanged }) {
           <div className="flex gap-2">
             <button onClick={abschliessen} disabled={busy}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                    style={{ background: fertig ? '#4caf6e' : '#4a90d9' }}>
+                    style={{ background: '#4caf6e' }}>
               <Icon name="check" size={15} color="#fff" />
-              {fertig ? t('mon_abschliessen') : t('mon_feierabend_buchen')}
+              {t('mon_feierabend_buchen')}
             </button>
             <button onClick={() => setFinishing(false)} disabled={busy}
                     className="px-4 py-3 rounded-xl text-sm text-secondary border border-border hover:bg-bg-2 transition-colors">
