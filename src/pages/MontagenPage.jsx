@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
@@ -485,6 +485,26 @@ export default function MontagenPage() {
   const [ratesDraft, setRatesDraft] = useState({})
   const [kmDraft, setKmDraft]       = useState('')
 
+  // The two-column dashboard row was pinned to calc(100vh-320px) — a
+  // hard-coded guess for everything above it. When the header/stats are
+  // even a few px taller (a different window width, wrapped stat cards,
+  // font rendering) the row overshoots the viewport and the page gains a
+  // scrollbar in production but not in dev. Measuring the row's real top
+  // makes the reserved space exact, so it fits the screen everywhere.
+  const rowRef = useRef(null)
+  const [rowH, setRowH] = useState(null)
+  useEffect(() => {
+    const calc = () => {
+      const el = rowRef.current
+      if (!el || !window.matchMedia('(min-width: 1280px)').matches) { setRowH(null); return }
+      const top = el.getBoundingClientRect().top
+      setRowH(Math.max(window.innerHeight - top - 40, 360))
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [loading])
+
   const load = useCallback(async () => {
     const seit = new Date()
     seit.setMonth(seit.getMonth() - 6)
@@ -805,7 +825,8 @@ export default function MontagenPage() {
 
       {/* Columns stretch to match each other and fill the viewport, so
           the charts row reaches the bottom instead of stopping short. */}
-      <div className="flex flex-col xl:flex-row gap-4 xl:min-h-[calc(100vh-320px)]">
+      <div ref={rowRef} className="flex flex-col xl:flex-row gap-4 xl:min-h-[var(--row-h,calc(100vh-320px))]"
+           style={{ '--row-h': rowH ? `${rowH}px` : undefined }}>
         {/* ══ MAIN COLUMN ══ */}
         <div className="flex-1 min-w-0 w-full flex flex-col gap-4">
           {/* filter bar with inline start flow */}
