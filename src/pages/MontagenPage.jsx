@@ -38,13 +38,13 @@ const MON_META = {
   arbeitet:   { color: '#4a90d9', icon: 'settings', labelKey: 'mon_arbeitet' },
   beendet:    { color: '#4caf6e', icon: 'check',    labelKey: 'mon_beendet' },
 }
-// Fully separated flow: driving → arrived (not working yet) → working
-// → finished. arbeit_start_at is the explicit "Arbeit starten" moment.
+// Drive and work are tracked independently. This single label is only
+// for the overview badges: working beats arrived beats driving.
 const monStatus = (m) =>
-  !m.ankunft_at && !m.arbeit_start_at ? 'unterwegs'
-    : !m.arbeit_start_at ? 'angekommen'
-      : !m.ende_at ? 'arbeitet'
-        : 'beendet'
+  m.ende_at ? 'beendet'
+    : m.arbeit_start_at ? 'arbeitet'
+      : m.ankunft_at ? 'angekommen'
+        : 'unterwegs'
 
 // Grouped per-project row status for the main table + donut.
 const GRP_META = {
@@ -204,9 +204,10 @@ function MontageStart({ projekte, onStarted, inline = false }) {
     setBusy('arbeit')
     const proj = projekte.find(p => p.id === Number(projektId))
     const patch = await checkinPatch(proj)
-    const now = new Date().toISOString()
+    // Work only — no drive, no arrival logged; the GPS check-in is
+    // captured against the site all the same.
     await supabase.from('montagen').insert({
-      ...baseRow(), abfahrt_at: null, ankunft_at: now, arbeit_start_at: now, ...patch,
+      ...baseRow(), abfahrt_at: null, ankunft_at: null, arbeit_start_at: new Date().toISOString(), ...patch,
     })
     setBusy(''); setProjektId('')
     onStarted()
@@ -267,6 +268,16 @@ function MontageLive({ offen, montagen, onChanged }) {
 
   const status = monStatus(offen)
   const meta = MON_META[status]
+  // The two bars are driven by their own timestamps, fully independent.
+  const faehrt   = offen.abfahrt_at && !offen.ankunft_at        // driving right now
+  const arbeitet = offen.arbeit_start_at && !offen.ende_at      // working right now
+
+  const abfahrtStarten = async () => {
+    setBusy(true)
+    await supabase.from('montagen').update({ abfahrt_at: new Date().toISOString() }).eq('id', offen.id)
+    setBusy(false)
+    onChanged()
+  }
 
   // Prefill the slider with the last progress anyone reported for
   // this project, so the worker adjusts instead of guessing from 0.
@@ -295,7 +306,10 @@ function MontageLive({ offen, montagen, onChanged }) {
   // arrival and this tap (prep, breakfast …) is not counted as work.
   const arbeitStarten = async () => {
     setBusy(true)
-    await supabase.from('montagen').update({ arbeit_start_at: new Date().toISOString() }).eq('id', offen.id)
+    // Capture the GPS check-in here if the drive/arrival path didn't
+    // already (work can be started without any Anfahrt).
+    const patch = { arbeit_start_at: new Date().toISOString(), ...(offen.ankunft_distanz == null ? await checkinPatch(offen.projekt) : {}) }
+    await supabase.from('montagen').update(patch).eq('id', offen.id)
     setBusy(false)
     onChanged()
   }
@@ -336,63 +350,84 @@ function MontageLive({ offen, montagen, onChanged }) {
         <MonStatusBadge status={status} />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-4">
-        <div className="bg-bg-2 border border-border rounded-xl p-3">
-          <div className="text-[11px] text-muted mb-1">{t('mon_fahrzeit')}</div>
-          {status === 'unterwegs'
-            ? <LiveDuration since={offen.abfahrt_at} color="#e8821c" className="text-sm font-semibold" />
-            : <div className="text-sm font-semibold font-mono">{fmtMin(fahrzeitMin(offen))}</div>}
-        </div>
-        <div className="bg-bg-2 border border-border rounded-xl p-3">
-          <div className="text-[11px] text-muted mb-1">{t('mon_arbeitszeit')}</div>
-          {status === 'arbeitet'
-            ? <LiveDuration since={offen.arbeit_start_at} color="#4a90d9" className="text-sm font-semibold" />
-            : <div className="text-sm font-semibold font-mono text-muted">—</div>}
-        </div>
-      </div>
-
-      {/* GPS check-in verdict, once arrived at a pinned site */}
-      {(status === 'angekommen' || status === 'arbeitet') && offen.projekt?.standort_lat != null && (
-        offen.ankunft_distanz == null ? (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted mb-3 -mt-2">
-            <Icon name="mapPin" size={11} color="#9aa3ad" /> {t('mon_gps_none')}
-          </div>
-        ) : offen.ankunft_distanz <= (offen.projekt.standort_radius ?? 150) ? (
-          <div className="flex items-center gap-1.5 text-[11px] text-green mb-3 -mt-2">
-            <Icon name="check" size={11} color="rgb(var(--color-green))" /> {t('mon_gps_ok')} ({fmtDistanz(offen.ankunft_distanz)})
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 text-[11px] text-red mb-3 -mt-2">
-            <Icon name="alert" size={11} color="rgb(var(--color-red))" /> {fmtDistanz(offen.ankunft_distanz)} {t('mon_gps_entfernt')}
-          </div>
-        )
-      )}
-
       {!finishing ? (
-        <div className="flex gap-2 flex-wrap">
-          {status === 'unterwegs' && (
-            <button onClick={angekommen} disabled={busy}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                    style={{ background: '#3fb6c4' }}>
-              <Icon name="mapPin" size={15} color="#fff" /> {t('mon_angekommen')}
-            </button>
+        <div className="space-y-2.5">
+          {/* ══ BAR 1 — nur Anfahrt (Fahrt) ══ */}
+          <div className="rounded-xl border p-3" style={{ borderColor: '#e8821c55', background: '#e8821c0d' }}>
+            <div className="flex items-center justify-between gap-2 mb-2.5">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Icon name="truck" size={15} color="#e8821c" /> {t('mon_bar_anfahrt')}
+              </span>
+              {faehrt
+                ? <LiveDuration since={offen.abfahrt_at} color="#e8821c" className="text-sm font-semibold" />
+                : <span className="text-sm font-mono font-semibold">{offen.ankunft_at ? fmtMin(fahrzeitMin(offen)) : '—'}</span>}
+            </div>
+            {!offen.abfahrt_at && !offen.ankunft_at && (
+              <button onClick={abfahrtStarten} disabled={busy}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                <Icon name="truck" size={15} color="#181c20" /> {t('mon_abfahrt')}
+              </button>
+            )}
+            {faehrt && (
+              <button onClick={angekommen} disabled={busy}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                      style={{ background: '#3fb6c4' }}>
+                <Icon name="mapPin" size={15} color="#fff" /> {t('mon_angekommen')}
+              </button>
+            )}
+            {offen.ankunft_at && (
+              <div className="flex items-center gap-1.5 text-[11px] text-green">
+                <Icon name="check" size={12} color="rgb(var(--color-green))" /> {t('mon_angekommen_um')} {fmtUhr(offen.ankunft_at)}
+              </div>
+            )}
+          </div>
+
+          {/* ══ BAR 2 — nur Arbeit ══ */}
+          <div className="rounded-xl border p-3" style={{ borderColor: '#4a90d955', background: '#4a90d90d' }}>
+            <div className="flex items-center justify-between gap-2 mb-2.5">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Icon name="settings" size={15} color="#4a90d9" /> {t('mon_bar_arbeit')}
+              </span>
+              {arbeitet
+                ? <LiveDuration since={offen.arbeit_start_at} color="#4a90d9" className="text-sm font-semibold" />
+                : <span className="text-sm font-mono font-semibold text-muted">—</span>}
+            </div>
+            {!offen.arbeit_start_at && (
+              <button onClick={arbeitStarten} disabled={busy}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                      style={{ background: '#4a90d9' }}>
+                <Icon name="settings" size={15} color="#fff" /> {t('mon_arbeit_start')}
+              </button>
+            )}
+            {arbeitet && (
+              <button onClick={startFinish} disabled={busy}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                      style={{ background: '#4caf6e' }}>
+                <Icon name="check" size={15} color="#fff" /> {t('mon_feierabend')}
+              </button>
+            )}
+          </div>
+
+          {/* GPS check-in verdict (captured on Angekommen or Arbeit starten) */}
+          {(offen.ankunft_at || offen.arbeit_start_at) && offen.projekt?.standort_lat != null && (
+            offen.ankunft_distanz == null ? (
+              <div className="flex items-center gap-1.5 text-[11px] text-muted">
+                <Icon name="mapPin" size={11} color="#9aa3ad" /> {t('mon_gps_none')}
+              </div>
+            ) : offen.ankunft_distanz <= (offen.projekt.standort_radius ?? 150) ? (
+              <div className="flex items-center gap-1.5 text-[11px] text-green">
+                <Icon name="check" size={11} color="rgb(var(--color-green))" /> {t('mon_gps_ok')} ({fmtDistanz(offen.ankunft_distanz)})
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-[11px] text-red">
+                <Icon name="alert" size={11} color="rgb(var(--color-red))" /> {fmtDistanz(offen.ankunft_distanz)} {t('mon_gps_entfernt')}
+              </div>
+            )
           )}
-          {status === 'angekommen' && (
-            <button onClick={arbeitStarten} disabled={busy}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                    style={{ background: '#4a90d9' }}>
-              <Icon name="settings" size={15} color="#fff" /> {t('mon_arbeit_start')}
-            </button>
-          )}
-          {status === 'arbeitet' && (
-            <button onClick={startFinish} disabled={busy}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                    style={{ background: '#4caf6e' }}>
-              <Icon name="check" size={15} color="#fff" /> {t('mon_feierabend')}
-            </button>
-          )}
+
           <button onClick={verwerfen} disabled={busy}
-                  className="px-3 py-3 rounded-xl text-xs text-muted border border-border hover:text-red hover:border-red/40 transition-colors">
+                  className="w-full py-2 rounded-lg text-xs text-muted border border-border hover:text-red hover:border-red/40 transition-colors">
             {t('mon_verwerfen')}
           </button>
         </div>

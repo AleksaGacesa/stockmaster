@@ -52,7 +52,7 @@ export const arbeitstag = (azInput, montagen = []) => {
   montagen.forEach(m => {
     const end = m.ende_at ? new Date(m.ende_at).getTime() : now
     if (!m.ende_at) offen = true
-    ivs.push([new Date(m.abfahrt_at ?? m.ankunft_at).getTime(), end])
+    ivs.push([new Date(m.abfahrt_at ?? m.ankunft_at ?? m.arbeit_start_at).getTime(), end])
   })
   if (ivs.length === 0) return { bruttoMin: 0, pauseMin: 0, nettoMin: 0, offen: false, start: null, ende: null, quellen: [] }
 
