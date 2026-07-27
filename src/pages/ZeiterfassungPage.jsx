@@ -408,6 +408,8 @@ export default function ZeiterfassungPage() {
   /* ── live operational data (selected day) ── */
   const heuteAz  = arbeitszeiten.filter(a => a.datum === selKey)
   const heuteMon = montagen.filter(m => m.datum === selKey)
+  // check-ins today without a GPS fix → notification card
+  const ohneGps = heuteAz.filter(a => a.kommen_at && a.kommen_distanz == null)
   // currently working on a montage site (arbeit_start set, not ended)
   const laufMon  = heuteMon.filter(m => m.arbeit_start_at && !m.ende_at)
   const projektOf = (id) => laufMon.find(m => m.arbeiter_id === id)?.projekt?.name ?? null
@@ -448,7 +450,6 @@ export default function ZeiterfassungPage() {
     cells: weekDays.map(dk => { const g = tage.find(x => x.arbeiter_id === p.id && x.datum === dk); return g ? g.nettoMin / 60 : 0 }),
   }))
   const heatMax = Math.max(1, ...heatData.flatMap(r => r.cells))
-  const abwesendHeute = profiles.length - anwesendCount
 
   const exportExcel = () => {
     const head = [t('zt_col_datum'), t('zt_col_arbeiter'), t('zt_kommen'), t('zt_gehen'), t('zt_pause'), t('zt_col_arbeitszeit'), t('zt_col_ueberstunden')]
@@ -516,12 +517,11 @@ export default function ZeiterfassungPage() {
         </div>
       </div>
 
-      {/* ══ KPI row ══ */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-3 mb-4">
-        <StatCard label={t('zt_anwesend')} icon="user" color="#4caf6e" value={`${anwesendCount}`} unit={`/ ${profiles.length}`}
-                  sub={`${abwesendHeute} ${t('zt_abwesend').toLowerCase()}`} subColor="rgb(var(--text-muted))" />
-        <StatCard label={t('zt_auf_montage')} icon="truck" color="#e8821c" value={`${aufMontage.length}`}
-                  sub={aufMontage.length ? aufMontage[0].projekt ?? ' ' : ' '} />
+      {/* ══ KPI bento — own clock (2×2) + metrics ══ */}
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
+        <div className="col-span-2 xl:row-span-2">
+          <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
+        </div>
         <StatCard label={t('zt_stunden_heute')} icon="clock" color="#4a90d9" value={fmtStd(heuteA.netto)} unit="h"
                   sub={deltaStr(heuteA.netto - gesternA.netto)} subColor={deltaCol(heuteA.netto - gesternA.netto)} spark={nettoSpark} />
         <StatCard label={t('zt_durchschnitt')} icon="user" color="#9b6bd9" value={fmtStd(durchschnittHeute)} unit="h"
@@ -531,6 +531,30 @@ export default function ZeiterfassungPage() {
                   subColor={deltaCol(-(ueberWoche - ueberVorwoche))} spark={overSpark} />
         <StatCard label={t('zt_pausen_heute')} icon="refresh" color="#3fb6c4" value={fmtStd(heuteA.pause)} unit="h"
                   sub={`Ø ${fmtStd(pauseProMa)} ${t('zt_pro_ma')}`} spark={pauseSpark} />
+        {/* no-GPS check-in notifications */}
+        <StatCard label={t('zt_ohne_gps')} icon="mapPin" color="#e0524a">
+          <div className="text-2xl font-bold font-mono leading-none">{ohneGps.length}</div>
+          <div className="text-[11px] mt-1.5 truncate" style={{ color: ohneGps.length ? 'rgb(var(--color-red))' : 'rgb(var(--text-muted))' }}>
+            {ohneGps.length ? ohneGps.map(a => a.arbeiter_name).slice(0, 2).join(', ') : t('zt_alle_gps_ok')}
+          </div>
+        </StatCard>
+        {/* top / bottom work time today */}
+        <StatCard label={t('zt_top_arbeitszeit')} icon="chart" color="#4caf6e">
+          {ranking.length === 0 ? <div className="text-xs text-muted mt-1">{t('zt_keine')}</div> : (
+            <div className="space-y-1.5 mt-0.5">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate flex items-center gap-1.5"><StatusDot color="#4caf6e" size={6} /> {ranking[0].arbeiter_name}</span>
+                <span className="font-mono font-semibold shrink-0">{fmtStd(ranking[0].nettoMin)} h</span>
+              </div>
+              {ranking.length > 1 && (
+                <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                  <span className="truncate flex items-center gap-1.5"><StatusDot color="#9aa3ad" size={6} /> {ranking[ranking.length - 1].arbeiter_name}</span>
+                  <span className="font-mono shrink-0">{fmtStd(ranking[ranking.length - 1].nettoMin)} h</span>
+                </div>
+              )}
+            </div>
+          )}
+        </StatCard>
       </div>
 
       {/* ══ MAIN — table + live rail, equal height ══ */}
@@ -635,11 +659,8 @@ export default function ZeiterfassungPage() {
           </Card>
         </div>
 
-        {/* LEFT rail — clock + live team, same height as the table */}
+        {/* LEFT rail — live team, same height as the table */}
         <div className="min-w-0 min-h-0 flex flex-col gap-4 order-1">
-          <div className="shrink-0">
-            <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
-          </div>
           <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 min-h-0 flex flex-col">
             <div className="flex items-center justify-between mb-3 shrink-0">
               <h3 className="font-semibold text-sm flex items-center gap-2"><StatusDot color="#4caf6e" pulse size={8} /> {t('zt_live_team')}</h3>
