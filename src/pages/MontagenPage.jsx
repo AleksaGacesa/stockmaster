@@ -462,6 +462,98 @@ function WochenChart({ minuten, lang }) {
   )
 }
 
+/* ══ LIVE DETAIL MODAL — the "Jetzt im Einsatz" card blown up to the
+   centre of the screen, one section per running project with every
+   worker's live Fahrzeit/Arbeitszeit, GPS check-in and cost preview.
+   Built for sites with 10+ workers where the compact card can't show
+   enough. ══ */
+function LiveEinsatzModal({ laufende, profMap, kmSatz, onClose }) {
+  const { t } = useLanguage()
+  const projektIds = [...new Map(laufende.map(m => [m.projekt_id, null])).keys()]
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+         onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-bg-1 border border-border w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+        <div className="sm:hidden flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-border" /></div>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <h2 className="text-base font-semibold flex items-center gap-2">
+            <StatusDot color="#4caf6e" pulse size={8} /> {t('mon_live_titel')}
+            <span className="text-xs text-muted font-normal">· {laufende.length} {t('mon_col_arbeiter')}</span>
+          </h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2">
+            <Icon name="x" size={16} color="#9aa3ad" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-4 space-y-4">
+          {projektIds.map(pid => {
+            const es = laufende.filter(m => m.projekt_id === pid)
+            const proj = es[0].projekt
+            const fruehste = Math.min(...es.map(m => new Date(montageStartAt(m)).getTime()))
+            const stunden = (Date.now() - fruehste) / 3600000
+            const kostenSum = es.reduce((s, m) => s + monKosten(m, profMap, kmSatz), 0)
+            return (
+              <div key={pid} className="border border-border rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between gap-3 px-4 py-3 bg-bg-2 border-b border-border">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-sm truncate">{proj?.name ?? `#${pid}`}</div>
+                    <div className="text-[11px] text-muted truncate">
+                      {proj?.kunde || '—'} · {t('mon_seit')} {fmtUhr(fruehste)} ({stunden.toFixed(1).replace('.', ',')} h)
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-mono font-bold text-amber">{fmt(kostenSum)}</div>
+                    <div className="text-[10px] text-muted">{es.length} {t('mon_col_arbeiter')}</div>
+                  </div>
+                </div>
+                <div className="divide-y divide-border">
+                  {es.map(m => {
+                    const st = monStatus(m)
+                    const dist = m.ankunft_distanz
+                    const radius = proj?.standort_radius ?? 150
+                    return (
+                      <div key={m.id} className="flex items-center gap-3 px-4 py-2.5">
+                        <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                              style={{ background: avColor(m.arbeiter_name) }}>
+                          {initialen(m.arbeiter_name)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate">{m.arbeiter_name || '—'}</div>
+                          <div className="mt-0.5"><MonStatusBadge status={st} /></div>
+                        </div>
+                        {proj?.standort_lat != null && dist != null && (
+                          <span className={`hidden sm:inline-flex items-center gap-1 text-[11px] font-mono shrink-0 ${dist <= radius ? 'text-green' : 'text-red'}`}>
+                            <Icon name={dist <= radius ? 'check' : 'alert'} size={11}
+                                  color={dist <= radius ? 'rgb(var(--color-green))' : 'rgb(var(--color-red))'} />
+                            {fmtDistanz(dist)}
+                          </span>
+                        )}
+                        <div className="text-right w-16 shrink-0">
+                          <div className="text-[10px] text-muted">{t('mon_fahrzeit')}</div>
+                          {st === 'unterwegs'
+                            ? <LiveDuration since={m.abfahrt_at} color="#e8821c" className="text-xs" />
+                            : <span className="text-xs font-mono">{fmtMin(fahrzeitMin(m))}</span>}
+                        </div>
+                        <div className="text-right w-16 shrink-0">
+                          <div className="text-[10px] text-muted">{t('mon_arbeitszeit')}</div>
+                          {st === 'arbeitet'
+                            ? <LiveDuration since={m.ankunft_at} color="#4a90d9" className="text-xs" />
+                            : <span className="text-xs font-mono text-muted">—</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const PAGE_SIZE = 8
 
 /* ══ MAIN PAGE ══ */
@@ -482,6 +574,7 @@ export default function MontagenPage() {
   const [expandedId, setExpandedId]         = useState(null)
   const [confirmDelete, setConfirmDelete]   = useState(null)
   const [showAllAct, setShowAllAct]         = useState(false)
+  const [showLive, setShowLive]             = useState(false)
   const [ratesDraft, setRatesDraft] = useState({})
   const [kmDraft, setKmDraft]       = useState('')
 
@@ -1094,14 +1187,19 @@ export default function MontagenPage() {
         {/* ══ RIGHT PANEL — activity card grows so the column fills the
             same height as the main one ══ */}
         <div className="w-full xl:w-80 shrink-0 flex flex-col gap-4 xl:gap-3 xl:min-h-0 xl:overflow-hidden">
-          {/* live */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
+          {/* live — click to open the full detail modal (10+ workers) */}
+          <Card onClick={laufende.length > 0 ? () => setShowLive(true) : undefined}
+                className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm flex items-center gap-2">
                 <StatusDot color="#4caf6e" pulse size={8} /> {t('mon_live')}
               </h3>
-              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md"
-                    style={{ background: '#4a90d91a', color: '#4a90d9' }}>Live</span>
+              {laufende.length > 0
+                ? <span className="text-[10px] font-medium text-amber inline-flex items-center gap-0.5">
+                    {t('mon_details')} <Icon name="chevronRight" size={12} color="#e8821c" />
+                  </span>
+                : <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md"
+                        style={{ background: '#4a90d91a', color: '#4a90d9' }}>Live</span>}
             </div>
             {laufende.length === 0 ? (
               <p className="text-xs text-muted text-center py-4">{t('mon_niemand')}</p>
@@ -1109,7 +1207,7 @@ export default function MontagenPage() {
               <div className="space-y-2">
                 {[...new Map(laufende.map(m => [m.projekt_id, null])).keys()].map(pid => {
                   const es = laufende.filter(m => m.projekt_id === pid)
-                  const fruehste = Math.min(...es.map(m => new Date(m.abfahrt_at).getTime()))
+                  const fruehste = Math.min(...es.map(m => new Date(montageStartAt(m)).getTime()))
                   const stunden = (Date.now() - fruehste) / 3600000
                   return (
                     <div key={pid} className="flex items-center gap-3 bg-bg-2 border border-border rounded-xl px-3 py-2.5">
@@ -1241,6 +1339,10 @@ export default function MontagenPage() {
           )}
         </div>
       </div>
+
+      {showLive && laufende.length > 0 && (
+        <LiveEinsatzModal laufende={laufende} profMap={profMap} kmSatz={kmSatz} onClose={() => setShowLive(false)} />
+      )}
     </div>
   )
 }
