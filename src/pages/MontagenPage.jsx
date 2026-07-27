@@ -245,8 +245,8 @@ function MontageLive({ offen, montagen, onChanged }) {
 
   const status = monStatus(offen)
   const meta = MON_META[status]
-  // The two bars are driven by their own timestamps, fully independent.
-  const faehrt   = offen.abfahrt_at && !offen.ankunft_at        // driving right now
+  // A live entry is EITHER a drive (abfahrt, closed at Angekommen) OR a
+  // work entry (arbeit_start) — never both. This drives which bar shows.
   const arbeitet = offen.arbeit_start_at && !offen.ende_at      // working right now
 
   // Prefill the slider with the last progress anyone reported for
@@ -264,25 +264,24 @@ function MontageLive({ offen, montagen, onChanged }) {
   // the radius (or GPS off) the check-in still goes through — the boss
   // just sees it flagged; a hard block would strand workers with a
   // weak signal on site.
-  // Arrival ends the drive — the km belong here, to the trip, not to the
-  // Feierabend/work form.
+  // A drive is a self-contained entry: "Angekommen" ends it right away
+  // (Fahrzeit + km recorded, GPS check-in stored, rates frozen). Work is
+  // a completely separate entry started from the "Montage starten" card,
+  // so the drive flow never offers an "Arbeit starten".
   const angekommen = async () => {
     setBusy(true)
-    const patch = { ankunft_at: new Date().toISOString(), km: Math.max(Number(km) || 0, 0), ...(await checkinPatch(offen.projekt)) }
+    const { data: firma } = await supabase.from('firmendaten').select('km_satz').eq('id', 1).single()
+    const { data: me } = await supabase.from('profiles').select('stundensatz').eq('id', user.id).single()
+    const now = new Date().toISOString()
+    const patch = {
+      ankunft_at: now, ende_at: now,
+      km: Math.max(Number(km) || 0, 0),
+      stundensatz: Number(me?.stundensatz ?? 0),
+      km_satz: Number(firma?.km_satz ?? 0),
+      ...(await checkinPatch(offen.projekt)),
+    }
     await supabase.from('montagen').update(patch).eq('id', offen.id)
     setBusy(false); setKm('')
-    onChanged()
-  }
-
-  // Separate, explicit start of the work clock — the time between
-  // arrival and this tap (prep, breakfast …) is not counted as work.
-  const arbeitStarten = async () => {
-    setBusy(true)
-    // Capture the GPS check-in here if the drive/arrival path didn't
-    // already (work can be started without any Anfahrt).
-    const patch = { arbeit_start_at: new Date().toISOString(), ...(offen.ankunft_distanz == null ? await checkinPatch(offen.projekt) : {}) }
-    await supabase.from('montagen').update(patch).eq('id', offen.id)
-    setBusy(false)
     onChanged()
   }
 
@@ -325,43 +324,32 @@ function MontageLive({ offen, montagen, onChanged }) {
         <div className="space-y-2.5">
           {/* ══ BAR 1 — nur Anfahrt (Fahrt); nur sichtbar wenn eine
               Abfahrt gestartet wurde ══ */}
-          {offen.abfahrt_at && (
+          {offen.abfahrt_at && !offen.arbeit_start_at && (
             <div className="rounded-xl border p-3" style={{ borderColor: '#e8821c55', background: '#e8821c0d' }}>
               <div className="flex items-center justify-between gap-2 mb-2.5">
                 <span className="flex items-center gap-2 text-sm font-semibold">
                   <Icon name="truck" size={15} color="#e8821c" /> {t('mon_bar_anfahrt')}
                 </span>
-                {faehrt
-                  ? <LiveDuration since={offen.abfahrt_at} color="#e8821c" className="text-sm font-semibold" />
-                  : <span className="text-sm font-mono font-semibold">{fmtMin(fahrzeitMin(offen))}</span>}
+                <LiveDuration since={offen.abfahrt_at} color="#e8821c" className="text-sm font-semibold" />
               </div>
-              {faehrt && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-secondary flex-1">{t('mon_km')}</span>
-                    <input type="number" min="0" value={km} onChange={e => setKm(e.target.value)} placeholder="0"
-                           className="w-24 bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-sm font-mono text-right outline-none focus:border-amber" />
-                    <span className="text-[11px] text-muted">km</span>
-                  </div>
-                  <button onClick={angekommen} disabled={busy}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
-                          style={{ background: '#3fb6c4' }}>
-                    <Icon name="mapPin" size={15} color="#fff" /> {t('mon_angekommen')}
-                  </button>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-secondary flex-1">{t('mon_km')}</span>
+                  <input type="number" min="0" value={km} onChange={e => setKm(e.target.value)} placeholder="0"
+                         className="w-24 bg-bg-1 border border-border rounded-lg px-2 py-1.5 text-sm font-mono text-right outline-none focus:border-amber" />
+                  <span className="text-[11px] text-muted">km</span>
                 </div>
-              )}
-              {offen.ankunft_at && (
-                <div className="flex items-center gap-1.5 text-[11px] text-green">
-                  <Icon name="check" size={12} color="rgb(var(--color-green))" /> {t('mon_angekommen_um')} {fmtUhr(offen.ankunft_at)}
-                  {Number(offen.km) > 0 && <span className="text-muted">· {Number(offen.km)} km</span>}
-                </div>
-              )}
+                <button onClick={angekommen} disabled={busy}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                        style={{ background: '#3fb6c4' }}>
+                  <Icon name="mapPin" size={15} color="#fff" /> {t('mon_angekommen')}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* ══ BAR 2 — nur Arbeit; erst nach der Ankunft verfügbar,
-              während der Fahrt bleibt es ausgeblendet ══ */}
-          {!faehrt && (
+          {/* ══ BAR 2 — nur Arbeit (aus der Karte „Montage starten") ══ */}
+          {offen.arbeit_start_at && (
             <div className="rounded-xl border p-3" style={{ borderColor: '#4a90d955', background: '#4a90d90d' }}>
               <div className="flex items-center justify-between gap-2 mb-2.5">
                 <span className="flex items-center gap-2 text-sm font-semibold">
@@ -371,13 +359,6 @@ function MontageLive({ offen, montagen, onChanged }) {
                   ? <LiveDuration since={offen.arbeit_start_at} color="#4a90d9" className="text-sm font-semibold" />
                   : <span className="text-sm font-mono font-semibold text-muted">—</span>}
               </div>
-              {!offen.arbeit_start_at && (
-                <button onClick={arbeitStarten} disabled={busy}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
-                        style={{ background: '#4a90d9' }}>
-                  <Icon name="settings" size={15} color="#fff" /> {t('mon_arbeit_start')}
-                </button>
-              )}
               {arbeitet && (
                 <button onClick={startFinish} disabled={busy}
                         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
