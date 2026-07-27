@@ -487,6 +487,14 @@ function LiveEinsatzModal({ laufende, profMap, kmSatz, onClose }) {
         </div>
 
         <div className="overflow-y-auto p-4 space-y-4">
+          {projektIds.length === 0 && (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <div className="w-12 h-12 rounded-full bg-bg-2 flex items-center justify-center">
+                <Icon name="mapPin" size={22} color="#6b7480" />
+              </div>
+              <p className="text-sm text-muted">{t('mon_niemand')}</p>
+            </div>
+          )}
           {projektIds.map(pid => {
             const es = laufende.filter(m => m.projekt_id === pid)
             const proj = es[0].projekt
@@ -1187,19 +1195,18 @@ export default function MontagenPage() {
         {/* ══ RIGHT PANEL — activity card grows so the column fills the
             same height as the main one ══ */}
         <div className="w-full xl:w-80 shrink-0 flex flex-col gap-4 xl:gap-3 xl:min-h-0 xl:overflow-hidden">
-          {/* live — click to open the full detail modal (10+ workers) */}
-          <Card onClick={laufende.length > 0 ? () => setShowLive(true) : undefined}
+          {/* live — always click to open the full detail modal (10+
+              workers); the Details affordance is always shown so it's
+              discoverable even before anyone is out */}
+          <Card onClick={() => setShowLive(true)}
                 className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] xl:shrink-0">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm flex items-center gap-2">
                 <StatusDot color="#4caf6e" pulse size={8} /> {t('mon_live')}
               </h3>
-              {laufende.length > 0
-                ? <span className="text-[10px] font-medium text-amber inline-flex items-center gap-0.5">
-                    {t('mon_details')} <Icon name="chevronRight" size={12} color="#e8821c" />
-                  </span>
-                : <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md"
-                        style={{ background: '#4a90d91a', color: '#4a90d9' }}>Live</span>}
+              <span className="text-[10px] font-medium text-amber inline-flex items-center gap-0.5">
+                {t('mon_details')} <Icon name="chevronRight" size={12} color="#e8821c" />
+              </span>
             </div>
             {laufende.length === 0 ? (
               <p className="text-xs text-muted text-center py-4">{t('mon_niemand')}</p>
@@ -1340,7 +1347,7 @@ export default function MontagenPage() {
         </div>
       </div>
 
-      {showLive && laufende.length > 0 && (
+      {showLive && (
         <LiveEinsatzModal laufende={laufende} profMap={profMap} kmSatz={kmSatz} onClose={() => setShowLive(false)} />
       )}
     </div>
