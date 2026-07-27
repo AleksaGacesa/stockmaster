@@ -302,10 +302,14 @@ function LiefStatCard({ label, value, sub, subColor, icon, color, spark }) {
 }
 
 function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unterwegs,
-                                lieferanten, bestellungen, onSammelbestellung, onShowLieferanten, onOpenBestellung }) {
+                                lieferanten, bestellungen, initialBestand, onSammelbestellung, onShowLieferanten, onOpenBestellung }) {
   const { t, lang } = useLanguage()
   const [search, setSearch] = useState('')
-  const [filterBestand, setFilterBestand]     = useState('alle')
+  // Home's "Bestellliste erstellen" / "Niedriger Bestand" deep-link here
+  // with ?bestand=niedrig so the list opens already filtered to the
+  // articles that actually need ordering.
+  const [filterBestand, setFilterBestand]     = useState(
+    ['niedrig', 'knapp'].includes(initialBestand) ? initialBestand : 'alle')
   const [filterKategorie, setFilterKategorie] = useState('alle')
   const [filterLieferant, setFilterLieferant] = useState('alle')
   const [view, setView] = useState('tabelle')
@@ -2130,6 +2134,7 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
                                                            justAdded={justAdded} lastPurchase={lastPurchase}
                                                            unterwegs={unterwegs} lieferanten={lieferanten}
                                                            bestellungen={bestellungen}
+                                                           initialBestand={searchParams.get('bestand')}
                                                            onSammelbestellung={setSammelItems}
                                                            onShowLieferanten={() => setTab('lieferanten')}
                                                            onOpenBestellung={setActiveBestellungId} />

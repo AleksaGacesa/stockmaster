@@ -825,10 +825,10 @@ export default function MontagenPage() {
 
       {/* Columns stretch to match each other and fill the viewport, so
           the charts row reaches the bottom instead of stopping short. */}
-      <div ref={rowRef} className="flex flex-col xl:flex-row gap-4 xl:min-h-[var(--row-h,calc(100vh-320px))]"
+      <div ref={rowRef} className="flex flex-col xl:flex-row gap-4 xl:h-[var(--row-h,calc(100vh-320px))] xl:overflow-hidden"
            style={{ '--row-h': rowH ? `${rowH}px` : undefined }}>
         {/* ══ MAIN COLUMN ══ */}
-        <div className="flex-1 min-w-0 w-full flex flex-col gap-4">
+        <div className="flex-1 min-w-0 w-full flex flex-col gap-4 xl:min-h-0">
           {/* filter bar with inline start flow */}
           <Card className="p-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="flex flex-wrap items-center gap-2">
@@ -866,8 +866,10 @@ export default function MontagenPage() {
           {/* my running montage (manager works on the roof too) */}
           {offenMeine && <MontageLive offen={offenMeine} montagen={montagen} onChanged={load} />}
 
-          {/* grouped table — grows to fill the leftover height */}
-          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col">
+          {/* grouped table — grows to fill the leftover height, scrolls
+              internally so the charts below stay pinned and the page
+              itself never scrolls (matches the other dashboards) */}
+          <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 flex flex-col xl:min-h-0">
             <div className="px-4 pt-4 pb-2">
               <h3 className="font-semibold text-sm">{t('mon_table_title')}</h3>
             </div>
@@ -875,7 +877,7 @@ export default function MontagenPage() {
               <p className="text-sm text-muted text-center py-10">{t('mon_keine')}</p>
             ) : (
               <>
-                <div className="overflow-x-auto flex-1">
+                <div className="overflow-x-auto flex-1 xl:min-h-0 xl:overflow-y-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
@@ -1034,8 +1036,9 @@ export default function MontagenPage() {
             )}
           </Card>
 
-          {/* bottom charts row — natural height, pushed to the bottom */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-auto">
+          {/* bottom charts row — natural height, stays pinned below the
+              scrolling table */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 xl:shrink-0">
             <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex flex-col">
               <h3 className="font-semibold text-sm mb-4">{t('mon_zeit_chart')}</h3>
               <div className="flex-1 flex flex-col justify-center">
@@ -1090,7 +1093,7 @@ export default function MontagenPage() {
 
         {/* ══ RIGHT PANEL — activity card grows so the column fills the
             same height as the main one ══ */}
-        <div className="w-full xl:w-80 shrink-0 flex flex-col gap-4">
+        <div className="w-full xl:w-80 shrink-0 flex flex-col gap-4 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
           {/* live */}
           <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="flex items-center justify-between mb-3">

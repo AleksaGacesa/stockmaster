@@ -627,7 +627,7 @@ export default function HomePage({ articles = [], moves = [] }) {
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
               <StatCard label={t('home_articles_total')} value={articles.length} icon="package" color="#4a90d9" onClick={() => navigate('/uebersicht')}
                         spark={kennzahlenSeries.map(s => s.artikel_anzahl)} trend={trendFor(kennzahlenSeries, 'artikel_anzahl')} trendMode="pct" />
-              <StatCard label={t('home_low_stock_full')} value={lowStock.length} icon="alert" color="#e0524a" onClick={() => navigate('/uebersicht?bestand=Niedrig')}
+              <StatCard label={t('home_low_stock_full')} value={lowStock.length} icon="alert" color="#e0524a" onClick={() => navigate('/lieferanten?tab=bestellen&bestand=niedrig')}
                         spark={kennzahlenSeries.map(s => s.niedriger_bestand)} trend={trendFor(kennzahlenSeries, 'niedriger_bestand')} trendMode="abs" />
               <StatCard label={t('home_open_orders')} value={bestellungen.length} icon="building" color="#9b6bd9" onClick={() => navigate('/lieferanten?tab=bestellungen')}
                         spark={kennzahlenSeries.map(s => s.offene_bestellungen)} trend={trendFor(kennzahlenSeries, 'offene_bestellungen')} trendMode="abs" />
@@ -862,7 +862,7 @@ export default function HomePage({ articles = [], moves = [] }) {
                 </div>
               </div>
               {lowStock.length > 0 && (
-                <button onClick={() => navigate('/uebersicht?bestand=Niedrig')}
+                <button onClick={() => navigate('/lieferanten?tab=bestellen&bestand=niedrig')}
                         className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold shrink-0"
                         style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
                   <Icon name="truck" size={15} color="#181c20" /> {t('home_create_orderlist')}
