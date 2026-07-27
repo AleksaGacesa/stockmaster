@@ -169,85 +169,66 @@ function MonStatusBadge({ status }) {
   )
 }
 
-/* ══ START FORM — pick a project, then EITHER log the paid drive
-   ("Abfahrt") OR start work directly on site ("Arbeit starten"). The two
-   are independent: firms that don't drive every day (or whose on-site
-   commute isn't paid) just start work; the drive is logged only on the
-   days it actually counts. ══ */
-function MontageStart({ projekte, onStarted, inline = false }) {
+/* ══ START CARDS — two completely separate entries. "Montage starten"
+   begins the WORK; "Abfahrt starten" begins the DRIVE. Each has its own
+   project picker and creates its own montage entry, so work and travel
+   never share a card. Whichever you start first, the live card's two
+   bars then let you run the other. ══ */
+function StartCard({ mode, projekte, onStarted }) {
   const { t } = useLanguage()
   const { user, profile } = useAuth()
   const [projektId, setProjektId] = useState('')
-  const [busy, setBusy] = useState('')
+  const [busy, setBusy] = useState(false)
+  const isArbeit = mode === 'arbeit'
+  const accent = isArbeit ? '#4a90d9' : '#e8821c'
 
-  const baseRow = () => ({
-    projekt_id: Number(projektId),
-    arbeiter_id: user.id,
-    arbeiter_name: profile?.display_name ?? '',
-  })
-
-  // Log the paid drive: row starts "unterwegs", abfahrt_at = now (DB
-  // default). The worker taps "Angekommen" on the live card to arrive.
-  const abfahrt = async () => {
+  const start = async () => {
     if (!projektId) return
-    setBusy('abfahrt')
-    await supabase.from('montagen').insert(baseRow())
-    setBusy(''); setProjektId('')
-    onStarted()
+    setBusy(true)
+    const base = { projekt_id: Number(projektId), arbeiter_id: user.id, arbeiter_name: profile?.display_name ?? '' }
+    if (isArbeit) {
+      // Work only — no drive, no arrival logged; GPS check-in captured.
+      const patch = await checkinPatch(projekte.find(p => p.id === Number(projektId)))
+      await supabase.from('montagen').insert({ ...base, abfahrt_at: null, ankunft_at: null, arbeit_start_at: new Date().toISOString(), ...patch })
+    } else {
+      // Drive only — abfahrt_at defaults to now(); "Angekommen" follows.
+      await supabase.from('montagen').insert(base)
+    }
+    setBusy(false); setProjektId(''); onStarted()
   }
 
-  // Start work directly — no paid drive today. abfahrt_at stays null
-  // (Fahrzeit = none); ankunft_at = now, so the row is "arbeitet" at
-  // once. GPS check-in is captured just like on Angekommen.
-  const arbeitStart = async () => {
-    if (!projektId) return
-    setBusy('arbeit')
-    const proj = projekte.find(p => p.id === Number(projektId))
-    const patch = await checkinPatch(proj)
-    // Work only — no drive, no arrival logged; the GPS check-in is
-    // captured against the site all the same.
-    await supabase.from('montagen').insert({
-      ...baseRow(), abfahrt_at: null, ankunft_at: null, arbeit_start_at: new Date().toISOString(), ...patch,
-    })
-    setBusy(''); setProjektId('')
-    onStarted()
-  }
-
-  const controls = (
-    <div className={`flex gap-2 ${inline ? 'flex-1 min-w-[260px] flex-wrap' : 'flex-col'}`}>
-      <select value={projektId} onChange={e => setProjektId(e.target.value)}
-              className="flex-1 bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber min-w-[160px]">
-        <option value="">{t('mon_select_projekt')}</option>
-        {projekte.map(p => (
-          <option key={p.id} value={p.id}>{p.name}{p.kunde ? ` — ${p.kunde}` : ''}</option>
-        ))}
-      </select>
-      <div className="flex gap-2 shrink-0">
-        <button onClick={abfahrt} disabled={!projektId || busy}
-                title={t('mon_abfahrt_hint')}
-                className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-          <Icon name="truck" size={14} color="#181c20" /> {t('mon_abfahrt')}
-        </button>
-        <button onClick={arbeitStart} disabled={!projektId || busy}
-                title={t('mon_arbeit_start_hint')}
-                className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                style={{ background: '#4a90d9' }}>
-          <Icon name="settings" size={14} color="#fff" /> {t('mon_arbeit_start')}
-        </button>
-      </div>
-    </div>
-  )
-
-  if (inline) return controls
   return (
     <Card className="p-4 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-      <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
-        <Icon name="mapPin" size={16} color="#e8821c" /> {t('mon_start_title')}
+      <h3 className="font-semibold text-sm flex items-center gap-2 mb-1">
+        <Icon name={isArbeit ? 'settings' : 'truck'} size={16} color={accent} />
+        {isArbeit ? t('mon_start_title') : t('mon_abfahrt_title')}
       </h3>
-      {controls}
-      <p className="text-[11px] text-muted mt-2.5 leading-snug">{t('mon_start_hint')}</p>
+      <p className="text-[11px] text-muted mb-3 leading-snug">{isArbeit ? t('mon_start_arbeit_hint') : t('mon_start_abfahrt_hint')}</p>
+      <div className="flex flex-col gap-2">
+        <select value={projektId} onChange={e => setProjektId(e.target.value)}
+                className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-amber">
+          <option value="">{t('mon_select_projekt')}</option>
+          {projekte.map(p => (
+            <option key={p.id} value={p.id}>{p.name}{p.kunde ? ` — ${p.kunde}` : ''}</option>
+          ))}
+        </select>
+        <button onClick={start} disabled={!projektId || busy}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+                style={isArbeit ? { background: accent, color: '#fff' } : { background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+          <Icon name={isArbeit ? 'settings' : 'truck'} size={15} color={isArbeit ? '#fff' : '#181c20'} />
+          {isArbeit ? t('mon_arbeit_start') : t('mon_abfahrt')}
+        </button>
+      </div>
     </Card>
+  )
+}
+
+function MontageStart({ projekte, onStarted }) {
+  return (
+    <div className="grid sm:grid-cols-2 gap-3">
+      <StartCard mode="arbeit" projekte={projekte} onStarted={onStarted} />
+      <StartCard mode="abfahrt" projekte={projekte} onStarted={onStarted} />
+    </div>
   )
 }
 
@@ -989,16 +970,14 @@ export default function MontagenPage() {
            style={{ '--row-h': rowH ? `${rowH}px` : undefined }}>
         {/* ══ MAIN COLUMN ══ */}
         <div className="flex-1 min-w-0 w-full flex flex-col gap-4 xl:min-h-0">
-          {/* filter bar with inline start flow */}
+          {/* start cards — two fully separate entries (work vs. drive),
+              shown until this manager has an open montage of their own */}
+          {!offenMeine && <MontageStart projekte={projekte} onStarted={load} />}
+
+          {/* filter bar */}
           <Card className="p-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="flex flex-wrap items-center gap-2">
-              {!offenMeine && (
-                <div className="flex-1 min-w-[220px]">
-                  <div className="text-[10px] font-semibold text-amber uppercase tracking-wide mb-1">{t('mon_start_title')}</div>
-                  <MontageStart projekte={projekte} onStarted={load} inline />
-                </div>
-              )}
-              <div className={`flex flex-wrap items-center gap-2 ${offenMeine ? 'flex-1' : 'self-end'}`}>
+              <div className="flex flex-wrap items-center gap-2 flex-1">
                 <select value={filterArbeiter} onChange={e => setFilterArbeiter(e.target.value)}
                         className="bg-bg-2 border border-border rounded-xl px-3 py-2 text-sm text-secondary outline-none">
                   <option value="alle">{t('mon_filter_alle_arbeiter')}</option>
