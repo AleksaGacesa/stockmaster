@@ -13,13 +13,19 @@ export const montageFahrzeitMin = (m) => (m.ankunft_at && m.abfahrt_at)
 // The entry's reference start for sorting/day-grouping: the drive start
 // if there was one, otherwise the moment work began. Never null — every
 // entry has at least one of the two.
-export const montageStartAt = (m) => m.abfahrt_at ?? m.ankunft_at
+export const montageStartAt = (m) => m.abfahrt_at ?? m.ankunft_at ?? m.arbeit_start_at
 
-// Net working time (arrival → end/now, minus the reported break).
+// Net working time (work start → end/now, minus the reported break).
+// Work now starts explicitly ("Arbeit starten"), separate from arrival,
+// so the anchor is arbeit_start_at. Legacy rows never had that column —
+// for a completed legacy row we fall back to ankunft_at so old totals
+// stay identical; a row that has only arrived (arbeit_start_at null,
+// not finished) counts no work time yet.
 export const montageArbeitMin = (m) => {
-  if (!m.ankunft_at) return 0
+  const start = m.arbeit_start_at ?? (m.ende_at ? m.ankunft_at : null)
+  if (!start) return 0
   const ende = m.ende_at ? new Date(m.ende_at) : new Date()
-  return Math.max((ende - new Date(m.ankunft_at)) / 60000 - Number(m.pause_min ?? 0), 0)
+  return Math.max((ende - new Date(start)) / 60000 - Number(m.pause_min ?? 0), 0)
 }
 
 export const montageMinuten = (m) => (montageFahrzeitMin(m) ?? 0) + montageArbeitMin(m)

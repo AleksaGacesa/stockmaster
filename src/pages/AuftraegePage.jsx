@@ -1009,7 +1009,7 @@ export default function AuftraegePage({ articles, setArticles }) {
       supabase.from('profiles').select('*').order('display_name'),
       supabase.from('warenbewegungen').select('projekt_id, artikel_id, menge').eq('typ', 'ausgang').not('projekt_id', 'is', null),
       supabase.from('montagen')
-        .select('projekt_id, abfahrt_at, ankunft_at, ende_at, pause_min, km, stundensatz, km_satz'),
+        .select('projekt_id, abfahrt_at, ankunft_at, arbeit_start_at, ende_at, pause_min, km, stundensatz, km_satz'),
     ])
     if (p) setProjekte(p)
     if (u) setUsers(u)

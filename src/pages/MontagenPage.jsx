@@ -33,11 +33,18 @@ async function checkinPatch(standort) {
 
 /* ── status & cost helpers ── */
 const MON_META = {
-  unterwegs: { color: '#e8821c', icon: 'truck',    labelKey: 'mon_unterwegs' },
-  arbeitet:  { color: '#4a90d9', icon: 'settings', labelKey: 'mon_arbeitet' },
-  beendet:   { color: '#4caf6e', icon: 'check',    labelKey: 'mon_beendet' },
+  unterwegs:  { color: '#e8821c', icon: 'truck',    labelKey: 'mon_unterwegs' },
+  angekommen: { color: '#3fb6c4', icon: 'mapPin',   labelKey: 'mon_status_angekommen' },
+  arbeitet:   { color: '#4a90d9', icon: 'settings', labelKey: 'mon_arbeitet' },
+  beendet:    { color: '#4caf6e', icon: 'check',    labelKey: 'mon_beendet' },
 }
-const monStatus = (m) => !m.ankunft_at ? 'unterwegs' : !m.ende_at ? 'arbeitet' : 'beendet'
+// Fully separated flow: driving → arrived (not working yet) → working
+// → finished. arbeit_start_at is the explicit "Arbeit starten" moment.
+const monStatus = (m) =>
+  !m.ankunft_at && !m.arbeit_start_at ? 'unterwegs'
+    : !m.arbeit_start_at ? 'angekommen'
+      : !m.ende_at ? 'arbeitet'
+        : 'beendet'
 
 // Grouped per-project row status for the main table + donut.
 const GRP_META = {
@@ -197,8 +204,9 @@ function MontageStart({ projekte, onStarted, inline = false }) {
     setBusy('arbeit')
     const proj = projekte.find(p => p.id === Number(projektId))
     const patch = await checkinPatch(proj)
+    const now = new Date().toISOString()
     await supabase.from('montagen').insert({
-      ...baseRow(), abfahrt_at: null, ankunft_at: new Date().toISOString(), ...patch,
+      ...baseRow(), abfahrt_at: null, ankunft_at: now, arbeit_start_at: now, ...patch,
     })
     setBusy(''); setProjektId('')
     onStarted()
@@ -283,6 +291,15 @@ function MontageLive({ offen, montagen, onChanged }) {
     onChanged()
   }
 
+  // Separate, explicit start of the work clock — the time between
+  // arrival and this tap (prep, breakfast …) is not counted as work.
+  const arbeitStarten = async () => {
+    setBusy(true)
+    await supabase.from('montagen').update({ arbeit_start_at: new Date().toISOString() }).eq('id', offen.id)
+    setBusy(false)
+    onChanged()
+  }
+
   const abschliessen = async () => {
     setBusy(true)
     // Freeze today's rates into the row — later rate changes must not
@@ -329,13 +346,13 @@ function MontageLive({ offen, montagen, onChanged }) {
         <div className="bg-bg-2 border border-border rounded-xl p-3">
           <div className="text-[11px] text-muted mb-1">{t('mon_arbeitszeit')}</div>
           {status === 'arbeitet'
-            ? <LiveDuration since={offen.ankunft_at} color="#4a90d9" className="text-sm font-semibold" />
+            ? <LiveDuration since={offen.arbeit_start_at} color="#4a90d9" className="text-sm font-semibold" />
             : <div className="text-sm font-semibold font-mono text-muted">—</div>}
         </div>
       </div>
 
       {/* GPS check-in verdict, once arrived at a pinned site */}
-      {status === 'arbeitet' && offen.projekt?.standort_lat != null && (
+      {(status === 'angekommen' || status === 'arbeitet') && offen.projekt?.standort_lat != null && (
         offen.ankunft_distanz == null ? (
           <div className="flex items-center gap-1.5 text-[11px] text-muted mb-3 -mt-2">
             <Icon name="mapPin" size={11} color="#9aa3ad" /> {t('mon_gps_none')}
@@ -356,8 +373,15 @@ function MontageLive({ offen, montagen, onChanged }) {
           {status === 'unterwegs' && (
             <button onClick={angekommen} disabled={busy}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                    style={{ background: '#4a90d9' }}>
+                    style={{ background: '#3fb6c4' }}>
               <Icon name="mapPin" size={15} color="#fff" /> {t('mon_angekommen')}
+            </button>
+          )}
+          {status === 'angekommen' && (
+            <button onClick={arbeitStarten} disabled={busy}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                    style={{ background: '#4a90d9' }}>
+              <Icon name="settings" size={15} color="#fff" /> {t('mon_arbeit_start')}
             </button>
           )}
           {status === 'arbeitet' && (
@@ -546,7 +570,7 @@ function LiveEinsatzModal({ laufende, profMap, kmSatz, onClose }) {
                         <div className="text-right w-16 shrink-0">
                           <div className="text-[10px] text-muted">{t('mon_arbeitszeit')}</div>
                           {st === 'arbeitet'
-                            ? <LiveDuration since={m.ankunft_at} color="#4a90d9" className="text-xs" />
+                            ? <LiveDuration since={m.arbeit_start_at} color="#4a90d9" className="text-xs" />
                             : <span className="text-xs font-mono text-muted">—</span>}
                         </div>
                       </div>

@@ -125,7 +125,7 @@ export default function WorkerProjectsPage() {
     const [{ data: p }, { data: moves }, { data: mons }] = await Promise.all([
       supabase.from('projekte').select('*, material:projekt_material(*), zeiterfassung:projekt_zeiterfassung(*)').order('created_at', { ascending: false }),
       supabase.from('warenbewegungen').select('projekt_id, artikel_id, menge').eq('typ', 'ausgang').not('projekt_id', 'is', null),
-      supabase.from('montagen').select('projekt_id, abfahrt_at, ankunft_at, ende_at, pause_min'),
+      supabase.from('montagen').select('projekt_id, abfahrt_at, ankunft_at, arbeit_start_at, ende_at, pause_min'),
     ])
     setProjekte(p ?? [])
     const vm = {}
