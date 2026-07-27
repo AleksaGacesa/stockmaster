@@ -48,20 +48,25 @@ function Avatar({ name, size = 32 }) {
   )
 }
 
+// Fluid sparkline: the viewBox keeps the drawing coordinates but the
+// SVG scales to its container's width, so it never spills out of a
+// narrow card (the mobile grid-cols-2 tiles were ~155px wide while the
+// old fixed 230px SVG overflowed them).
 function Sparkline({ points, color, w = 96, h = 34 }) {
-  if (!points || points.length < 2 || Math.max(...points.map(Math.abs)) === 0) return <svg width={w} height={h} />
+  if (!points || points.length < 2 || Math.max(...points.map(Math.abs)) === 0)
+    return <svg width="100%" height={h} className="block" />
   const min = Math.min(...points), max = Math.max(...points), span = max - min || 1
   const xy = (v, i) => [(i / (points.length - 1)) * w, h - 4 - ((v - min) / span) * (h - 8)]
   const line = points.map((v, i) => xy(v, i).join(',')).join(' ')
   const area = `${xy(points[0], 0)[0]},${h} ${line} ${xy(points[points.length - 1], points.length - 1)[0]},${h}`
   const gid = `g${color.replace(/[^a-z0-9]/gi, '')}`
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="block w-full">
       <defs><linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
         <stop offset="0" stopColor={color} stopOpacity="0.22" /><stop offset="1" stopColor={color} stopOpacity="0" />
       </linearGradient></defs>
       <polygon points={area} fill={`url(#${gid})`} />
-      <polyline points={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       {points.map((v, i) => { const [x, y] = xy(v, i); return <circle key={i} cx={x} cy={y} r="1.4" fill={color} /> })}
     </svg>
   )
@@ -418,7 +423,7 @@ export default function ZeiterfassungPage() {
 
   /* ══ MANAGER DASHBOARD ══ */
   return (
-    <div className="p-3 sm:p-6 lg:p-8">
+    <div className="p-3 sm:p-6 lg:p-8 overflow-x-hidden">
       {/* header */}
       <div className="flex items-start justify-between gap-3 flex-wrap mb-5">
         <div>
