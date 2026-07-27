@@ -1179,8 +1179,9 @@ export default function MontagenPage() {
             </div>
           </Card>
 
-          {/* activity feed */}
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1">
+          {/* activity feed — capped to ~3 rows with its own scroll so the
+              whole right column doesn't need a scrollbar */}
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
               <Icon name="clock" size={15} color="#9b6bd9" /> {t('mon_aktivitaeten')}
             </h3>
@@ -1188,8 +1189,8 @@ export default function MontagenPage() {
               <p className="text-xs text-muted text-center py-4">{t('mon_keine')}</p>
             ) : (
               <>
-                <div className="space-y-2.5">
-                  {activities.slice(0, showAllAct ? 20 : 4).map((a, i) => (
+                <div className="space-y-2.5 xl:max-h-[150px] xl:overflow-y-auto xl:pr-1">
+                  {activities.slice(0, showAllAct ? 20 : 6).map((a, i) => (
                     <div key={`${a.at}-${i}`} className="flex items-start gap-2.5 animate-fade-up" style={{ animationDelay: `${i * 30}ms` }}>
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
                            style={{ background: a.color + '1f' }}>
@@ -1217,20 +1218,22 @@ export default function MontagenPage() {
             <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
               <h3 className="font-semibold text-sm mb-3">{t('mon_saetze')}</h3>
               <div className="space-y-2">
-                {profiles.map(p => (
-                  <div key={p.id} className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
-                          style={{ background: avColor(p.display_name) }}>
-                      {initialen(p.display_name)}
-                    </span>
-                    <span className="text-xs flex-1 truncate">{p.display_name}</span>
-                    <input type="number" min="0" step="0.5" value={ratesDraft[p.id] ?? ''}
-                           onChange={e => setRatesDraft(d => ({ ...d, [p.id]: e.target.value }))}
-                           onBlur={() => saveRate(p.id)}
-                           className="w-20 bg-bg-2 border border-border rounded-lg px-2 py-1.5 text-xs font-mono text-right outline-none focus:border-amber" />
-                    <span className="text-[11px] text-muted w-7">€/h</span>
-                  </div>
-                ))}
+                <div className="space-y-2 xl:max-h-[192px] xl:overflow-y-auto xl:pr-1">
+                  {profiles.map(p => (
+                    <div key={p.id} className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                            style={{ background: avColor(p.display_name) }}>
+                        {initialen(p.display_name)}
+                      </span>
+                      <span className="text-xs flex-1 truncate">{p.display_name}</span>
+                      <input type="number" min="0" step="0.5" value={ratesDraft[p.id] ?? ''}
+                             onChange={e => setRatesDraft(d => ({ ...d, [p.id]: e.target.value }))}
+                             onBlur={() => saveRate(p.id)}
+                             className="w-20 bg-bg-2 border border-border rounded-lg px-2 py-1.5 text-xs font-mono text-right outline-none focus:border-amber" />
+                      <span className="text-[11px] text-muted w-7">€/h</span>
+                    </div>
+                  ))}
+                </div>
                 <div className="flex items-center gap-2 border-t border-border pt-2 mt-2">
                   <span className="text-xs flex-1">{t('mon_km_satz')}</span>
                   <input type="number" min="0" step="0.05" value={kmDraft}

@@ -87,13 +87,13 @@ function StandortPreview({ lat, lng, radius }) {
   }, [lat, lng, radius])
 
   if (lat == null) {
-    return <div className="h-32 rounded-xl bg-bg-2 border border-border flex items-center justify-center text-muted text-xs">
+    return <div className="h-24 rounded-xl bg-bg-2 border border-border flex items-center justify-center text-muted text-xs">
       <Icon name="mapPin" size={18} color="#6b7480" />
     </div>
   }
   // `isolate` traps Leaflet's high pane z-indexes in their own stacking
   // context so the preview never renders in front of a modal opened above it.
-  return <div ref={boxRef} className="h-32 rounded-xl overflow-hidden border border-border bg-bg-2 isolate" />
+  return <div ref={boxRef} className="h-24 rounded-xl overflow-hidden border border-border bg-bg-2 isolate" />
 }
 
 // Consistent section header (icon chip + title) used across the
@@ -826,7 +826,7 @@ export default function EinstellungenPage({ articles, moves, setArticles, setMov
         </div>
 
         {/* ══ RIGHT — fills to the same bottom as the left column ══ */}
-        <div className="space-y-5 xl:flex xl:flex-col xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+        <div className="space-y-4 xl:flex xl:flex-col xl:min-h-0 xl:overflow-y-auto xl:pr-1">
           {/* Firmendaten */}
           {firmaEdit
             ? <FirmaCard firma={firma} setFirma={setFirma}
