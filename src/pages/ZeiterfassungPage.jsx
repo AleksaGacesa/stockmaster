@@ -535,8 +535,8 @@ export default function ZeiterfassungPage() {
 
       {/* ══ MAIN — table + live rail, equal height ══ */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4 xl:h-[544px]">
-        {/* table */}
-        <div className="xl:col-span-2 min-w-0 min-h-0">
+        {/* table (right) */}
+        <div className="xl:col-span-2 min-w-0 min-h-0 order-2">
           <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-full flex flex-col">
             <div className="flex flex-wrap items-center gap-2 p-3 border-b border-border shrink-0">
               <h3 className="font-semibold text-sm mr-auto">{t('zt_table_titel')}</h3>
@@ -635,8 +635,8 @@ export default function ZeiterfassungPage() {
           </Card>
         </div>
 
-        {/* RIGHT rail — clock + live team, same height as the table */}
-        <div className="min-w-0 min-h-0 flex flex-col gap-4">
+        {/* LEFT rail — clock + live team, same height as the table */}
+        <div className="min-w-0 min-h-0 flex flex-col gap-4 order-1">
           <div className="shrink-0">
             <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
           </div>
