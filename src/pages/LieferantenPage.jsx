@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, Fragment } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -302,18 +302,18 @@ function LiefStatCard({ label, value, sub, subColor, icon, color, spark }) {
 }
 
 function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unterwegs,
-                                lieferanten, bestellungen, onShowLieferanten, onOpenBestellung }) {
+                                lieferanten, bestellungen, onSammelbestellung, onShowLieferanten, onOpenBestellung }) {
   const { t, lang } = useLanguage()
   const [search, setSearch] = useState('')
   const [filterBestand, setFilterBestand]     = useState('alle')
   const [filterKategorie, setFilterKategorie] = useState('alle')
   const [filterLieferant, setFilterLieferant] = useState('alle')
   const [view, setView] = useState('tabelle')
-  const [page, setPage] = useState(0)
   const [expandedId, setExpandedId] = useState(null)
   const [showAllAct, setShowAllAct] = useState(false)
-
-  useEffect(() => { setPage(0) }, [search, filterBestand, filterKategorie, filterLieferant])
+  // Multi-select for a Sammelbestellung (group order): filter to one
+  // supplier, tick several articles, order them all in one go.
+  const [selected, setSelected] = useState(() => new Set())
 
   // On xl screens the whole tab gets a hard height down to the viewport
   // bottom (measured from its stable top edge). Inside it the table
@@ -334,24 +334,6 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
     calc()
     window.addEventListener('resize', calc)
     return () => window.removeEventListener('resize', calc)
-  }, [])
-
-  // Page size from the table box's real flex-assigned height. The box
-  // is min-h-0 + overflow-hidden, so its size comes from the layout,
-  // not from the rows — no measure/grow feedback loop. Below xl the
-  // page scrolls normally and the default of 10 stays.
-  const tableBoxRef = useRef(null)
-  const [pageSize, setPageSize] = useState(10)
-  useLayoutEffect(() => {
-    const el = tableBoxRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => {
-      if (!window.matchMedia('(min-width: 1280px)').matches) { setPageSize(10); return }
-      const h = el.clientHeight
-      if (h > 0) setPageSize(Math.min(Math.max(Math.floor((h - 36) / 64), 5), 40))
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
   }, [])
 
   const liefById = useMemo(() => new Map(lieferanten.map(l => [l.id, l])), [lieferanten])
@@ -414,11 +396,23 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
       (filterLieferant === 'alle' || a.lieferant_id === Number(filterLieferant))
     )
   })
-  const pageCount = Math.max(Math.ceil(filtered.length / pageSize), 1)
-  const safePage = Math.min(page, pageCount - 1)
-  const paged = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
-  const from = filtered.length === 0 ? 0 : safePage * pageSize + 1
-  const to = Math.min((safePage + 1) * pageSize, filtered.length)
+  /* ── multi-select (Sammelbestellung) ── */
+  const toggleSel = (id) => setSelected(s => {
+    const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+  const allSelected  = filtered.length > 0 && filtered.every(a => selected.has(a.id))
+  const someSelected = filtered.some(a => selected.has(a.id))
+  const toggleAll = () => setSelected(s => {
+    const n = new Set(s)
+    if (allSelected) filtered.forEach(a => n.delete(a.id))
+    else filtered.forEach(a => n.add(a.id))
+    return n
+  })
+  const clearSel = () => setSelected(new Set())
+  const startSammel = () => {
+    const picked = articles.filter(a => selected.has(a.id))
+    if (picked.length) onSammelbestellung(picked)
+  }
 
   /* ── right panel data ── */
   const donutData = useMemo(() => {
@@ -457,8 +451,13 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
   /* ── shared article row (compact list, mobile + Karten view) ── */
   const compactList = (
     <div className="space-y-1.5">
-      {paged.map(a => (
-        <div key={a.id} className="bg-bg-1 border border-border rounded-xl px-3 py-2.5 flex items-center gap-3">
+      {filtered.map(a => (
+        <div key={a.id} onClick={() => toggleSel(a.id)}
+             className={`bg-bg-1 border rounded-xl px-3 py-2.5 flex items-center gap-3 cursor-pointer transition-colors ${
+               selected.has(a.id) ? 'border-amber bg-amber/5' : 'border-border'}`}>
+          <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSel(a.id)}
+                 onClick={e => e.stopPropagation()}
+                 className="w-4 h-4 accent-amber shrink-0 cursor-pointer" />
           <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 hidden sm:block">
             <ArtikelBild artikel={a} iconSize={16} />
           </div>
@@ -479,7 +478,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
               </div>
             )}
           </div>
-          <button onClick={() => onOpenAdd(a)}
+          <button onClick={e => { e.stopPropagation(); onOpenAdd(a) }}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold shrink-0"
                   style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
             <Icon name="plus" size={13} color="#181c20" /> {t('lief_order_button')}
@@ -566,14 +565,20 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                 {view === 'liste' && (
                   <div className="hidden lg:block flex-1 xl:min-h-0 xl:overflow-y-auto p-3">
                     <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-                      {paged.map((a, i) => {
+                      {filtered.map((a, i) => {
                         const st = artStatus(a)
                         const lief = liefById.get(a.lieferant_id)
+                        const sel = selected.has(a.id)
                         return (
-                          <Card key={a.id} className="overflow-hidden flex flex-col animate-fade-up shadow-[0_1px_2px_rgba(0,0,0,0.06)] hover:border-border-strong transition-all"
+                          <Card key={a.id} className={`overflow-hidden flex flex-col animate-fade-up shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all ${sel ? 'border-amber' : 'hover:border-border-strong'}`}
                                 style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}>
-                            <div className="aspect-video overflow-hidden border-b border-border">
+                            <div className="aspect-video overflow-hidden border-b border-border relative">
                               <ArtikelBild artikel={a} iconSize={30} />
+                              <label onClick={e => e.stopPropagation()}
+                                     className="absolute top-2 left-2 w-6 h-6 rounded-md bg-bg-0/80 border border-border flex items-center justify-center cursor-pointer">
+                                <input type="checkbox" checked={sel} onChange={() => toggleSel(a.id)}
+                                       className="w-4 h-4 accent-amber cursor-pointer" />
+                              </label>
                             </div>
                             <div className="p-3 flex flex-col gap-1.5 flex-1">
                               <div className="flex items-center justify-between gap-2">
@@ -602,10 +607,16 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                   </div>
                 )}
                 {view === 'tabelle' && (
-                  <div ref={tableBoxRef} className="hidden lg:block overflow-x-auto flex-1 xl:min-h-0 xl:overflow-y-hidden">
+                  <div className="hidden lg:block overflow-x-auto flex-1 xl:min-h-0 xl:overflow-y-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border">
+                        <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border sticky top-0 bg-bg-1 z-10">
+                          <th className="pl-4 pr-1 py-2.5">
+                            <input type="checkbox" checked={allSelected}
+                                   ref={el => { if (el) el.indeterminate = !allSelected && someSelected }}
+                                   onChange={toggleAll}
+                                   className="w-4 h-4 accent-amber cursor-pointer align-middle" />
+                          </th>
                           <th className="px-4 py-2.5 font-medium">{t('lief_col_artikel')}</th>
                           <th className="px-4 py-2.5 font-medium">{t('lief_col_details')}</th>
                           <th className="px-4 py-2.5 font-medium">{t('lief_col_lager')}</th>
@@ -616,14 +627,19 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                         </tr>
                       </thead>
                       <tbody>
-                        {paged.map(a => {
+                        {filtered.map(a => {
                           const st = artStatus(a)
                           const lief = liefById.get(a.lieferant_id)
                           const expanded = expandedId === a.id
+                          const sel = selected.has(a.id)
                           return (
                             <Fragment key={a.id}>
                               <tr onClick={() => setExpandedId(expanded ? null : a.id)}
-                                  className={`border-b border-border cursor-pointer transition-colors ${expanded ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
+                                  className={`border-b border-border cursor-pointer transition-colors ${sel ? 'bg-amber/5' : expanded ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
+                                <td className="pl-4 pr-1 py-2.5" onClick={e => e.stopPropagation()}>
+                                  <input type="checkbox" checked={sel} onChange={() => toggleSel(a.id)}
+                                         className="w-4 h-4 accent-amber cursor-pointer align-middle" />
+                                </td>
                                 <td className="px-4 py-2.5">
                                   <div className="flex items-center gap-3">
                                     <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 border border-border">
@@ -671,7 +687,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                               </tr>
                               {expanded && (
                                 <tr className="border-b border-border bg-bg-0/40">
-                                  <td colSpan={7} className="px-6 py-2.5 text-xs text-secondary">
+                                  <td colSpan={8} className="px-6 py-2.5 text-xs text-secondary">
                                     <div className="flex flex-wrap gap-x-6 gap-y-1">
                                       {lastPurchase[a.id] ? (
                                         <span>{t('lief_last_purchase')}: {fmtDt(lastPurchase[a.id].created_at)} · {lastPurchase[a.id].menge} {a.einheit} · {fmt(lastPurchase[a.id].preis ?? 0)}/{a.einheit}</span>
@@ -693,31 +709,31 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                     </table>
                   </div>
                 )}
-                {/* pagination */}
-                <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted flex-wrap gap-2">
-                  <span>
-                    {lang === 'en'
-                      ? `Showing ${from} to ${to} of ${filtered.length} articles`
-                      : `Zeige ${from} bis ${to} von ${filtered.length} Artikeln`}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}
-                            className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-bg-2 transition-colors">
-                      <Icon name="chevronLeft" size={12} color="#9aa3ad" />
-                    </button>
-                    {Array.from({ length: Math.min(pageCount, 7) }).map((_, i) => (
-                      <button key={i} onClick={() => setPage(i)}
-                              className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                                i === safePage ? 'bg-amber text-bg-0' : 'border border-border text-secondary hover:bg-bg-2'
-                              }`}>
-                        {i + 1}
+                {/* selection / Sammelbestellung bar */}
+                <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs flex-wrap gap-2 xl:shrink-0">
+                  {selected.size > 0 ? (
+                    <>
+                      <span className="text-secondary font-medium">
+                        {selected.size} {t('lief_ausgewaehlt')}
+                        <button onClick={clearSel} className="ml-2 text-muted hover:text-primary underline underline-offset-2">
+                          {t('lief_auswahl_aufheben')}
+                        </button>
+                      </span>
+                      <button onClick={startSammel}
+                              className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold"
+                              style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+                        <Icon name="cart" size={13} color="#181c20" /> {t('lief_sammel_erstellen')}
                       </button>
-                    ))}
-                    <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}
-                            className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-bg-2 transition-colors">
-                      <Icon name="chevronRight" size={12} color="#9aa3ad" />
-                    </button>
-                  </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-muted">
+                        {filtered.length} {lang === 'en' ? 'articles' : 'Artikel'}
+                        {filterLieferant !== 'alle' && ` · ${liefById.get(Number(filterLieferant))?.name ?? ''}`}
+                      </span>
+                      <span className="text-muted hidden sm:inline">{t('lief_sammel_hint')}</span>
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -844,11 +860,31 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
 }
 
 /* ══ NEUE BESTELLUNG MODAL (manuell, ohne Artikel-Vorauswahl) ══ */
-function NewBestellungModal({ lieferanten, articles, initialLieferantId, onClose, onCreated }) {
+// Suggest a sensible reorder qty for a pre-picked article: top up to
+// 1.5× the minimum, but never below 1.
+const nachbestellMenge = (a) => Math.max(1, Math.ceil(Number(a.mindestbestand ?? 0) * 1.5) - Number(a.menge ?? 0))
+
+function NewBestellungModal({ lieferanten, articles, initialLieferantId, initialItems, onClose, onCreated }) {
   const { profile } = useAuth()
   const { t } = useLanguage()
-  const [lieferantId, setLieferantId] = useState(initialLieferantId ?? lieferanten[0]?.id ?? null)
-  const [items, setItems]             = useState([])
+  // "Sammelbestellung" mode: opened with a batch of pre-selected
+  // articles from the Bestellen tab. The supplier defaults to the one
+  // most of them belong to; changing it must NOT wipe the selection.
+  const sammel = Array.isArray(initialItems) && initialItems.length > 0
+  const guessLieferant = () => {
+    if (initialLieferantId) return initialLieferantId
+    if (sammel) {
+      const counts = {}
+      initialItems.forEach(a => { if (a.lieferant_id) counts[a.lieferant_id] = (counts[a.lieferant_id] ?? 0) + 1 })
+      const top = Object.entries(counts).sort((x, y) => y[1] - x[1])[0]
+      if (top) return Number(top[0])
+    }
+    return lieferanten[0]?.id ?? null
+  }
+  const [lieferantId, setLieferantId] = useState(guessLieferant())
+  const [items, setItems]             = useState(() => sammel
+    ? initialItems.map(a => ({ artikel_id: a.id, nummer: a.nummer, name: a.name, einheit: a.einheit, preis: a.preis, menge: nachbestellMenge(a) }))
+    : [])
   const [manualSearch, setManualSearch] = useState('')
   const [notiz, setNotiz]             = useState('')
   const [error, setError]             = useState(null)
@@ -857,10 +893,11 @@ function NewBestellungModal({ lieferanten, articles, initialLieferantId, onClose
   const selectedLieferant = lieferanten.find(l => l.id === Number(lieferantId))
 
   useEffect(() => {
+    if (sammel) return // items come from the selection, not auto-suggest
     if (!selectedLieferant) { setItems([]); return }
     const suggested = lowStockForLieferant(articles, selectedLieferant).map(a => ({
       artikel_id: a.id, nummer: a.nummer, name: a.name, einheit: a.einheit, preis: a.preis,
-      menge: Math.max(1, Math.ceil(a.mindestbestand * 1.5) - a.menge),
+      menge: nachbestellMenge(a),
     }))
     setItems(suggested)
   }, [lieferantId]) // eslint-disable-line
@@ -914,7 +951,7 @@ function NewBestellungModal({ lieferanten, articles, initialLieferantId, onClose
           <div className="w-10 h-1 rounded-full bg-border" />
         </div>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-base font-semibold">{t('lief_new_order')}</h2>
+          <h2 className="text-base font-semibold">{sammel ? t('lief_sammel_title') : t('lief_new_order')}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2">
             <Icon name="x" size={16} color="#9aa3ad" />
           </button>
@@ -1954,6 +1991,7 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
   const [newBestellungFor, setNewBestellungFor]     = useState(undefined) // undefined = closed
   const [activeBestellungId, setActiveBestellungId] = useState(null)
   const [addPopupArtikel, setAddPopupArtikel]       = useState(null)
+  const [sammelItems, setSammelItems]               = useState(null) // pre-selected articles → group order
   const [justAdded, setJustAdded]                   = useState(null)
   const [firma, setFirma]                           = useState(null)
   const [jumpFilterLief, setJumpFilterLief]         = useState(null)
@@ -2092,6 +2130,7 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
                                                            justAdded={justAdded} lastPurchase={lastPurchase}
                                                            unterwegs={unterwegs} lieferanten={lieferanten}
                                                            bestellungen={bestellungen}
+                                                           onSammelbestellung={setSammelItems}
                                                            onShowLieferanten={() => setTab('lieferanten')}
                                                            onOpenBestellung={setActiveBestellungId} />
     if (tab === 'bestellungen') return <BestellungenTab bestellungen={bestellungen} lieferanten={lieferanten}
@@ -2160,6 +2199,13 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
         <NewBestellungModal
           lieferanten={lieferanten} articles={articles} initialLieferantId={newBestellungFor}
           onClose={() => setNewBestellungFor(undefined)} onCreated={onBestellungCreated}
+        />
+      )}
+      {sammelItems && lieferanten.length > 0 && (
+        <NewBestellungModal
+          lieferanten={lieferanten} articles={articles} initialItems={sammelItems}
+          onClose={() => setSammelItems(null)}
+          onCreated={(id) => { setSammelItems(null); onBestellungCreated(id) }}
         />
       )}
       {addPopupArtikel && (
