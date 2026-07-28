@@ -521,11 +521,25 @@ export default function ZeiterfassungPage() {
   /* ── dashboard aggregates (mockup) ── */
   const abwesendHeute = Math.max(profiles.length - anwesendCount, 0)
   const projekteAktiv = new Set(heuteMon.filter(m => m.projekt_id).map(m => m.projekt_id)).size
-  const gpsGesamt = heuteAz.filter(a => a.kommen_at).length
-  const gpsBestaetigt = heuteAz.filter(a => a.kommen_at && a.kommen_distanz != null && a.kommen_distanz <= gpsRadius).length
+  // GPS check-in status per WORKER (not per raw row): a worker is
+  // "bestätigt" if any of today's check-ins was within the company
+  // radius, "offen" if present but no confirmed GPS fix.
+  const gpsByWorker = new Map()
+  heuteAz.filter(a => a.kommen_at).forEach(a => {
+    const cur = gpsByWorker.get(a.arbeiter_id)
+    const ok = a.kommen_distanz != null && a.kommen_distanz <= gpsRadius
+    gpsByWorker.set(a.arbeiter_id, {
+      name: a.arbeiter_name,
+      ok: (cur?.ok || ok),
+      lat: cur?.lat ?? a.kommen_lat, lng: cur?.lng ?? a.kommen_lng,
+      distanz: cur?.distanz ?? a.kommen_distanz,
+    })
+  })
+  const gpsWorkers = [...gpsByWorker.values()]
+  const gpsGesamt = gpsWorkers.length
+  const gpsBestaetigt = gpsWorkers.filter(w => w.ok).length
   const gpsOffen = Math.max(gpsGesamt - gpsBestaetigt, 0)
-  const gpsPoints = heuteAz.filter(a => a.kommen_lat != null)
-    .map(a => ({ lat: a.kommen_lat, lng: a.kommen_lng, ok: a.kommen_distanz != null && a.kommen_distanz <= gpsRadius, name: a.arbeiter_name }))
+  const gpsPoints = gpsWorkers.filter(w => w.lat != null).map(w => ({ lat: w.lat, lng: w.lng, ok: w.ok, name: w.name }))
 
   // team status counts
   const pauseIds = new Set(aufPause.map(w => w.id))
@@ -944,27 +958,63 @@ export default function ZeiterfassungPage() {
         </Card>
       </div>
 
-      {/* ══ VERLAUF — full event log (click to expand); grows to fill
-          the remaining page height ══ */}
-      <Card onClick={() => setShowHistory(true)}
-            className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] cursor-pointer h-[280px] flex flex-col">
-        <div className="flex items-center justify-between mb-3 shrink-0">
-          <h3 className="font-semibold text-sm flex items-center gap-2">
-            <Icon name="clock" size={15} color="#9b6bd9" /> {t('zt_verlauf')}
-            <span className="text-[11px] text-muted font-normal">· {verlauf.length}</span>
-          </h3>
-          <span className="text-[11px] font-medium text-amber inline-flex items-center gap-0.5">
-            {t('zt_alle_anzeigen')} <Icon name="chevronRight" size={12} color="#e8821c" />
-          </span>
-        </div>
-        {verlauf.length === 0 ? (
-          <p className="text-xs text-muted text-center py-6">{t('zt_keine_aenderungen')}</p>
-        ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-            {verlauf.slice(0, 120).map((ev, i) => <HistoryRow key={i} e={ev} />)}
+      {/* ══ bottom row — Verlauf (wide) + Team + Top-Arbeitszeit ══ */}
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 mt-4">
+        {/* Verlauf — event log, click to expand */}
+        <Card onClick={() => setShowHistory(true)}
+              className="p-4 xl:col-span-3 shadow-[0_1px_2px_rgba(0,0,0,0.06)] cursor-pointer h-[280px] flex flex-col">
+          <div className="flex items-center justify-between mb-3 shrink-0">
+            <h3 className="font-semibold text-sm flex items-center gap-2">
+              <Icon name="clock" size={15} color="#9b6bd9" /> {t('zt_verlauf')}
+              <span className="text-[11px] text-muted font-normal">· {verlauf.length}</span>
+            </h3>
+            <span className="text-[11px] font-medium text-amber inline-flex items-center gap-0.5">
+              {t('zt_alle_anzeigen')} <Icon name="chevronRight" size={12} color="#e8821c" />
+            </span>
           </div>
-        )}
-      </Card>
+          {verlauf.length === 0 ? (
+            <p className="text-xs text-muted text-center py-6">{t('zt_keine_aenderungen')}</p>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+              {verlauf.slice(0, 120).map((ev, i) => <HistoryRow key={i} e={ev} />)}
+            </div>
+          )}
+        </Card>
+
+        {/* Team status — green/red dots per worker */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[280px] flex flex-col">
+          <div className="flex items-center justify-between mb-3 shrink-0">
+            <h3 className="font-semibold text-sm flex items-center gap-2"><StatusDot color="#4caf6e" pulse size={8} /> {t('zt_live_team')}</h3>
+            <span className="text-[11px] text-muted font-mono">{anwesendCount}/{profiles.length}</span>
+          </div>
+          <div className="space-y-0.5 flex-1 min-h-0 overflow-y-auto pr-1">
+            {teamList.map(u => (
+              <div key={u.id} className="flex items-center gap-2.5 px-1 py-1.5">
+                <StatusDot color={u.anwesend ? '#4caf6e' : '#9aa3ad'} pulse={u.anwesend} size={8} />
+                <span className={`flex-1 min-w-0 truncate text-sm ${u.anwesend ? 'text-primary' : 'text-muted'}`}>{u.display_name}</span>
+                <span className="text-[10px] text-muted shrink-0">{roleLabel(u.role)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Top Arbeitszeit heute */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[280px] flex flex-col">
+          <h3 className="font-semibold text-sm mb-3 shrink-0">{t('zt_top_arbeitszeit')}</h3>
+          {ranking.length === 0 ? <p className="text-xs text-muted flex-1 flex items-center justify-center">{t('zt_keine')}</p> : (
+            <div className="space-y-2.5 flex-1 min-h-0 overflow-y-auto pr-1">
+              {ranking.map((g, i) => (
+                <div key={g.arbeiter_id} className="flex items-center gap-2.5">
+                  <span className={`w-5 text-center text-xs font-bold ${i === 0 ? 'text-amber' : 'text-muted'}`}>{i + 1}</span>
+                  <Avatar name={g.arbeiter_name} size={26} />
+                  <span className="flex-1 min-w-0 truncate text-sm">{g.arbeiter_name}</span>
+                  <span className={`text-sm font-mono font-semibold shrink-0 ${i === 0 ? 'text-amber' : ''}`}>{fmtStd(g.nettoMin)} h</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
 
       {showHistory && <HistoryModal events={verlauf} onClose={() => setShowHistory(false)} />}
       {editTag && <KorrekturModal tag={editTag} onClose={() => setEditTag(null)} onSaved={() => { setEditTag(null); load() }} />}
