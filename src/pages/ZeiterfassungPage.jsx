@@ -151,9 +151,10 @@ function StatusHeuteCard({ firma, anwesendCount, totalCount, onChanged }) {
         <Icon name="clock" size={15} color="#4a90d9" />
         <span className="text-sm font-semibold">{t('zt_kommen_gehen')}</span>
       </div>
-      {/* circular live clock with GPS status inside */}
+      {/* circular live clock with GPS status inside; the circle scales
+          down if the card gets short, so it never overlaps the buttons */}
       <div className="flex-1 flex items-center justify-center min-h-0 my-2">
-        <div className="relative w-32 h-32 rounded-full flex flex-col items-center justify-center text-center px-3"
+        <div className="relative aspect-square h-full max-h-[132px] rounded-full flex flex-col items-center justify-center text-center px-2"
              style={{ border: `5px solid ${ring}` }}>
           <span className="text-[9px] text-muted">{t('zt_aktuelle_uhrzeit')}</span>
           <span className="text-xl font-bold font-mono tabular-nums leading-tight">{uhr}</span>
@@ -167,25 +168,28 @@ function StatusHeuteCard({ firma, anwesendCount, totalCount, onChanged }) {
           {mine && <span className="text-[9px] font-mono font-semibold mt-0.5" style={{ color: ring }}>{hms(netMs)}</span>}
         </div>
       </div>
-      {/* actions */}
-      <div className="space-y-2 shrink-0">
-        {mine && (
-          <button onClick={togglePause} disabled={busy}
-                  className="w-full py-2 rounded-xl text-sm font-semibold border transition-all"
-                  style={pausiert ? { background: 'var(--color-amber-dim)', borderColor: '#e8821c', color: '#e8821c' } : { background: 'rgb(var(--bg-2))', borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>
-            {pausiert ? t('zt_pause_ende') : t('zt_pause')}
+      {/* actions — same height in both states so the clock never shifts */}
+      <div className="shrink-0">
+        {!mine ? (
+          <button onClick={kommen} disabled={busy}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40"
+                  style={{ background: '#4caf6e' }}>
+            <Icon name="arrowDown" size={15} color="#fff" /> {t('zt_kommen')}
           </button>
+        ) : (
+          <div className="flex gap-2">
+            <button onClick={togglePause} disabled={busy}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all"
+                    style={pausiert ? { background: 'var(--color-amber-dim)', borderColor: '#e8821c', color: '#e8821c' } : { background: 'rgb(var(--bg-2))', borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>
+              {pausiert ? t('zt_pause_ende') : t('zt_pause')}
+            </button>
+            <button onClick={gehen} disabled={busy}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border disabled:opacity-40"
+                    style={{ borderColor: '#e0524a', color: '#e0524a', background: 'transparent' }}>
+              <Icon name="arrowUp" size={15} color="#e0524a" /> {t('zt_gehen')}
+            </button>
+          </div>
         )}
-        <button onClick={kommen} disabled={busy || !!mine}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40"
-                style={{ background: '#4caf6e' }}>
-          <Icon name="arrowDown" size={15} color="#fff" /> {t('zt_kommen')}
-        </button>
-        <button onClick={gehen} disabled={busy || !mine}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border disabled:opacity-40"
-                style={{ borderColor: '#e0524a', color: '#e0524a', background: 'transparent' }}>
-          <Icon name="arrowUp" size={15} color="#e0524a" /> {t('zt_gehen')}
-        </button>
       </div>
     </Card>
   )
