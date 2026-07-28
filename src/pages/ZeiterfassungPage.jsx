@@ -998,11 +998,13 @@ export default function ZeiterfassungPage() {
           </div>
           <div className="space-y-0.5 flex-1 min-h-0 overflow-y-auto pr-1">
             {teamList.map(u => (
-              <div key={u.id} className="flex items-center gap-2.5 px-1 py-1.5">
+              <div key={u.id} className="flex items-center gap-2 px-1 py-1.5">
                 <StatusDot color={u.online ? '#4caf6e' : '#9aa3ad'} pulse={u.online} size={8} />
                 <span className={`flex-1 min-w-0 truncate text-sm ${u.online ? 'text-primary' : 'text-muted'}`}>{u.display_name}</span>
-                {u.anwesend && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: '#4caf6e1a', color: '#4caf6e' }}>{t('zt_anwesend')}</span>}
-                <span className="text-[10px] text-muted shrink-0">{roleLabel(u.role)}</span>
+                <span className="w-[62px] flex justify-end shrink-0">
+                  {u.anwesend && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: '#4caf6e1a', color: '#4caf6e' }}>{t('zt_anwesend')}</span>}
+                </span>
+                <span className="text-[10px] text-muted shrink-0 w-[74px] text-right truncate">{roleLabel(u.role)}</span>
               </div>
             ))}
           </div>
