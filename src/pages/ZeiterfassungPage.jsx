@@ -11,6 +11,7 @@ import {
   arbeitstag, pausenMin, pauseLaeuft, fmtStd, fmtUhr, wochenStart,
 } from '../lib/arbeitszeitHelpers'
 import { distanzMeter, montageArbeitMin } from '../lib/montagenHelpers'
+import { useOnlinePresence } from '../hooks/useOnlinePresence'
 
 // Daily target (minutes) for a worker → drives overtime. Uses the
 // worker's own contract (weekly value spread over 5 workdays), then
@@ -352,6 +353,7 @@ function HistoryModal({ events, onClose }) {
 export default function ZeiterfassungPage() {
   const { t } = useLanguage()
   const { isManager, user } = useAuth()
+  const { onlineIds } = useOnlinePresence()   // who is logged in right now
   const [arbeitszeiten, setArbeitszeiten] = useState([])
   const [montagen, setMontagen] = useState([])
   const [profiles, setProfiles] = useState([])
@@ -466,9 +468,11 @@ export default function ZeiterfassungPage() {
   const summeNetto = rows.reduce((s, r) => s + r.nettoMin, 0)
   const summeOver = rows.reduce((s, r) => s + r.over, 0)
 
-  // Team status (all employees, present today or not) + today ranking
-  const teamList = profiles.map(p => ({ ...p, anwesend: anwesendIds.has(p.id) }))
-    .sort((a, b) => (b.anwesend ? 1 : 0) - (a.anwesend ? 1 : 0))
+  // Team status: `anwesend` = clocked in (Kommen), `online` = logged in
+  // to the app right now (live presence, independent of the punch clock).
+  const teamList = profiles.map(p => ({ ...p, anwesend: anwesendIds.has(p.id), online: onlineIds.has(String(p.id)) }))
+    .sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0))
+  const onlineCount = teamList.filter(u => u.online).length
   const ranking = tagFor(selKey).filter(g => g.nettoMin > 0)
     .sort((a, b) => b.nettoMin - a.nettoMin)
 
@@ -985,13 +989,14 @@ export default function ZeiterfassungPage() {
         <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[280px] flex flex-col">
           <div className="flex items-center justify-between mb-3 shrink-0">
             <h3 className="font-semibold text-sm flex items-center gap-2"><StatusDot color="#4caf6e" pulse size={8} /> {t('zt_live_team')}</h3>
-            <span className="text-[11px] text-muted font-mono">{anwesendCount}/{profiles.length}</span>
+            <span className="text-[11px] text-muted font-mono">{onlineCount} {t('zt_online')}</span>
           </div>
           <div className="space-y-0.5 flex-1 min-h-0 overflow-y-auto pr-1">
             {teamList.map(u => (
               <div key={u.id} className="flex items-center gap-2.5 px-1 py-1.5">
-                <StatusDot color={u.anwesend ? '#4caf6e' : '#9aa3ad'} pulse={u.anwesend} size={8} />
-                <span className={`flex-1 min-w-0 truncate text-sm ${u.anwesend ? 'text-primary' : 'text-muted'}`}>{u.display_name}</span>
+                <StatusDot color={u.online ? '#4caf6e' : '#9aa3ad'} pulse={u.online} size={8} />
+                <span className={`flex-1 min-w-0 truncate text-sm ${u.online ? 'text-primary' : 'text-muted'}`}>{u.display_name}</span>
+                {u.anwesend && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: '#4caf6e1a', color: '#4caf6e' }}>{t('zt_anwesend')}</span>}
                 <span className="text-[10px] text-muted shrink-0">{roleLabel(u.role)}</span>
               </div>
             ))}
