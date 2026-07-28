@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -151,20 +151,21 @@ function StatusHeuteCard({ firma, anwesendCount, totalCount, onChanged }) {
         <Icon name="clock" size={15} color="#4a90d9" />
         <span className="text-sm font-semibold">{t('zt_kommen_gehen')}</span>
       </div>
-      {/* circular live clock */}
-      <div className="flex-1 flex items-center justify-center min-h-0">
-        <div className="relative w-36 h-36 rounded-full flex flex-col items-center justify-center"
+      {/* circular live clock with GPS status inside */}
+      <div className="flex-1 flex items-center justify-center min-h-0 my-2">
+        <div className="relative w-32 h-32 rounded-full flex flex-col items-center justify-center text-center px-3"
              style={{ border: `5px solid ${ring}` }}>
-          <span className="text-[10px] text-muted">{t('zt_aktuelle_uhrzeit')}</span>
-          <span className="text-2xl font-bold font-mono tabular-nums leading-tight">{uhr}</span>
-          <span className="text-[10px] text-muted">{fmtDatum(dateKey())}</span>
-          {mine && <span className="text-[10px] font-mono font-semibold mt-0.5" style={{ color: ring }}>{hms(netMs)}</span>}
+          <span className="text-[9px] text-muted">{t('zt_aktuelle_uhrzeit')}</span>
+          <span className="text-xl font-bold font-mono tabular-nums leading-tight">{uhr}</span>
+          <span className="text-[9px] text-muted">{fmtDatum(dateKey())}</span>
+          <span className="flex items-center gap-1 text-[9px] mt-0.5 max-w-full">
+            <StatusDot color={firma?.firma_lat != null ? '#4caf6e' : '#9aa3ad'} size={5} pulse={firma?.firma_lat != null} />
+            <span className="truncate" style={{ color: firma?.firma_lat != null ? '#4caf6e' : '#9aa3ad' }}>
+              {firma?.firma_lat != null ? t('zt_gps_verbunden') : t('zt_gps_aus')}
+            </span>
+          </span>
+          {mine && <span className="text-[9px] font-mono font-semibold mt-0.5" style={{ color: ring }}>{hms(netMs)}</span>}
         </div>
-      </div>
-      {/* GPS status */}
-      <div className="flex items-center justify-center gap-1.5 text-[11px] my-3 shrink-0">
-        <StatusDot color={firma?.firma_lat != null ? '#4caf6e' : '#9aa3ad'} size={7} pulse={firma?.firma_lat != null} />
-        <span className="text-secondary truncate">{firma?.firma_lat != null ? (firma?.adresse ? `GPS · ${firma.adresse}` : t('zt_gps_verbunden')) : t('zt_gps_aus')}</span>
       </div>
       {/* actions */}
       <div className="space-y-2 shrink-0">
@@ -247,6 +248,33 @@ function KorrekturModal({ tag, onClose, onSaved }) {
       </Card>
     </div>
   )
+}
+
+// Non-interactive OpenStreetMap (Leaflet, lazy) with a green/amber pin
+// per today's check-in — the little "GPS Check-ins" map. `isolate` keeps
+// Leaflet's high pane z-indexes from leaking above modals.
+function GpsCheckinMap({ points }) {
+  const boxRef = useRef(null)
+  const mapRef = useRef(null)
+  useEffect(() => {
+    let disposed = false
+    Promise.all([import('leaflet'), import('leaflet/dist/leaflet.css')]).then(([mod]) => {
+      if (disposed || !boxRef.current || mapRef.current) return
+      const L = mod.default ?? mod
+      const map = L.map(boxRef.current, { zoomControl: false, attributionControl: false, scrollWheelZoom: false })
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map)
+      mapRef.current = map
+      const pts = points.filter(p => p.lat != null)
+      if (pts.length) {
+        pts.forEach(p => L.circleMarker([p.lat, p.lng], { radius: 6, weight: 2, color: '#fff',
+          fillColor: p.ok ? '#4caf6e' : '#e8821c', fillOpacity: 1 }).addTo(map))
+        map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])), { padding: [26, 26], maxZoom: 15 })
+      } else { map.setView([51.163, 10.447], 5) }
+    })
+    return () => { disposed = true; mapRef.current?.remove(); mapRef.current = null }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return <div ref={boxRef} className="w-full h-full rounded-xl overflow-hidden isolate bg-bg-2" />
 }
 
 /* ══ small analytics pieces ══ */
@@ -492,6 +520,8 @@ export default function ZeiterfassungPage() {
   const gpsGesamt = heuteAz.filter(a => a.kommen_at).length
   const gpsBestaetigt = heuteAz.filter(a => a.kommen_at && a.kommen_distanz != null && a.kommen_distanz <= gpsRadius).length
   const gpsOffen = Math.max(gpsGesamt - gpsBestaetigt, 0)
+  const gpsPoints = heuteAz.filter(a => a.kommen_lat != null)
+    .map(a => ({ lat: a.kommen_lat, lng: a.kommen_lng, ok: a.kommen_distanz != null && a.kommen_distanz <= gpsRadius, name: a.arbeiter_name }))
 
   // team status counts
   const pauseIds = new Set(aufPause.map(w => w.id))
@@ -591,7 +621,7 @@ export default function ZeiterfassungPage() {
 
   /* ══ MANAGER DASHBOARD ══ */
   return (
-    <div className="p-3 sm:p-6 lg:p-8 overflow-x-hidden flex flex-col min-h-full">
+    <div className="p-3 sm:p-6 lg:p-8 overflow-x-hidden">
       {/* header */}
       <div className="flex items-start justify-between gap-3 flex-wrap mb-5">
         <div>
@@ -887,31 +917,25 @@ export default function ZeiterfassungPage() {
           )}
         </Card>
 
-        {/* GPS Check-ins */}
+        {/* GPS Check-ins — mini map + confirmed/open */}
         <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[220px] flex flex-col">
-          <h3 className="text-xs font-semibold text-secondary mb-3 shrink-0">{t('zt_gps_checkins')}</h3>
-          <div className="flex items-center gap-2 mb-3 shrink-0">
-            <div className="flex-1 rounded-xl border border-green/30 bg-green-dim p-2 text-center">
-              <div className="text-lg font-bold font-mono text-green leading-none">{gpsBestaetigt}</div>
-              <div className="text-[10px] text-muted mt-0.5">{t('zt_bestaetigt')}</div>
-            </div>
-            <div className="flex-1 rounded-xl border border-border bg-bg-2 p-2 text-center">
-              <div className="text-lg font-bold font-mono leading-none">{gpsOffen}</div>
-              <div className="text-[10px] text-muted mt-0.5">{t('zt_offen')}</div>
-            </div>
+          <h3 className="text-xs font-semibold text-secondary mb-2 shrink-0">{t('zt_gps_checkins')}</h3>
+          <div className="flex-1 min-h-0 mb-2">
+            {gpsPoints.length > 0
+              ? <GpsCheckinMap key={`${selKey}-${gpsPoints.length}`} points={gpsPoints} />
+              : <div className="w-full h-full rounded-xl bg-bg-2 border border-border flex items-center justify-center text-[11px] text-muted">{t('zt_keine')}</div>}
           </div>
-          <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0 pr-1">
-            {heuteAz.filter(a => a.kommen_at).slice(0, 8).map((a, i) => {
-              const ok = a.kommen_distanz != null && a.kommen_distanz <= gpsRadius
-              return (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <Icon name={ok ? 'mapPin' : 'alert'} size={12} color={ok ? 'rgb(var(--color-green))' : '#e8821c'} />
-                  <span className="flex-1 min-w-0 truncate">{a.arbeiter_name}</span>
-                  <span className="font-mono text-[11px] text-muted shrink-0">{a.kommen_distanz != null ? `${a.kommen_distanz} m` : t('zt_ohne_gps')}</span>
-                </div>
-              )
-            })}
-            {gpsGesamt === 0 && <p className="text-xs text-muted text-center py-2">{t('zt_keine')}</p>}
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex-1 rounded-xl border border-green/30 bg-green-dim px-2 py-1.5 flex items-center gap-2">
+              <Icon name="mapPin" size={14} color="rgb(var(--color-green))" />
+              <div><div className="text-sm font-bold font-mono text-green leading-none">{gpsBestaetigt} / {gpsGesamt}</div>
+              <div className="text-[10px] text-muted">{t('zt_bestaetigt')}</div></div>
+            </div>
+            <div className="flex-1 rounded-xl border border-border bg-bg-2 px-2 py-1.5 flex items-center gap-2">
+              <Icon name="alert" size={14} color="#9aa3ad" />
+              <div><div className="text-sm font-bold font-mono leading-none">{gpsOffen}</div>
+              <div className="text-[10px] text-muted">{t('zt_offen')}</div></div>
+            </div>
           </div>
         </Card>
       </div>
@@ -919,7 +943,7 @@ export default function ZeiterfassungPage() {
       {/* ══ VERLAUF — full event log (click to expand); grows to fill
           the remaining page height ══ */}
       <Card onClick={() => setShowHistory(true)}
-            className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] cursor-pointer flex-1 min-h-[240px] flex flex-col">
+            className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] cursor-pointer h-[280px] flex flex-col">
         <div className="flex items-center justify-between mb-3 shrink-0">
           <h3 className="font-semibold text-sm flex items-center gap-2">
             <Icon name="clock" size={15} color="#9b6bd9" /> {t('zt_verlauf')}
