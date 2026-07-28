@@ -277,6 +277,47 @@ function HeatCell({ v, max }) {
   )
 }
 
+/* ══ change-history log ══ */
+const fmtVerlaufDT = (ts) => new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(ts))
+function HistoryRow({ k }) {
+  const { t } = useLanguage()
+  return (
+    <div className="flex items-start gap-3 py-2 border-b border-border/60 last:border-0">
+      <span className="text-[11px] font-mono text-muted shrink-0 w-[86px] pt-0.5">{fmtVerlaufDT(k.created_at)}</span>
+      <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style={{ background: '#e8821c1f' }}>
+        <Icon name="edit" size={12} color="#e8821c" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm leading-snug">{k.beschreibung || '—'}</div>
+        <div className="text-[11px] text-muted mt-0.5 truncate">
+          <span className="font-medium">{k.arbeiter_name || '—'}</span>
+          {k.von_user && <> · {t('zt_geaendert_von')} {k.von_user}</>}
+        </div>
+      </div>
+    </div>
+  )
+}
+function HistoryModal({ korrekturen, onClose }) {
+  const { t } = useLanguage()
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+         onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-bg-1 border border-border w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+        <div className="sm:hidden flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-border" /></div>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <h2 className="text-base font-semibold flex items-center gap-2"><Icon name="clock" size={16} color="#9b6bd9" /> {t('zt_verlauf')}
+            <span className="text-xs text-muted font-normal">· {korrekturen.length}</span></h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2"><Icon name="x" size={16} color="#9aa3ad" /></button>
+        </div>
+        <div className="overflow-y-auto px-5 py-2">
+          {korrekturen.length === 0 ? <p className="text-sm text-muted text-center py-10">{t('zt_keine_aenderungen')}</p>
+            : korrekturen.map(k => <HistoryRow key={k.id} k={k} />)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ══ MAIN PAGE ══ */
 export default function ZeiterfassungPage() {
   const { t } = useLanguage()
@@ -293,6 +334,7 @@ export default function ZeiterfassungPage() {
   const [filterArbeiter, setFilterArbeiter] = useState('alle')
   const [search, setSearch] = useState('')
   const [editTag, setEditTag] = useState(null)
+  const [showHistory, setShowHistory] = useState(false)
 
   const load = useCallback(async () => {
     const [{ data: az }, { data: mon }, { data: prof }, { data: firmaD }, { data: korr }] = await Promise.all([
@@ -863,6 +905,28 @@ export default function ZeiterfassungPage() {
         </Card>
       </div>
 
+      {/* ══ VERLAUF — change history log (click to expand) ══ */}
+      <Card onClick={() => setShowHistory(true)}
+            className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] cursor-pointer">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-sm flex items-center gap-2">
+            <Icon name="clock" size={15} color="#9b6bd9" /> {t('zt_verlauf')}
+            <span className="text-[11px] text-muted font-normal">· {korrekturen.length}</span>
+          </h3>
+          <span className="text-[11px] font-medium text-amber inline-flex items-center gap-0.5">
+            {t('zt_alle_anzeigen')} <Icon name="chevronRight" size={12} color="#e8821c" />
+          </span>
+        </div>
+        {korrekturen.length === 0 ? (
+          <p className="text-xs text-muted text-center py-6">{t('zt_keine_aenderungen')}</p>
+        ) : (
+          <div className="max-h-[260px] overflow-y-auto pr-1">
+            {korrekturen.slice(0, 40).map(k => <HistoryRow key={k.id} k={k} />)}
+          </div>
+        )}
+      </Card>
+
+      {showHistory && <HistoryModal korrekturen={korrekturen} onClose={() => setShowHistory(false)} />}
       {editTag && <KorrekturModal tag={editTag} onClose={() => setEditTag(null)} onSaved={() => { setEditTag(null); load() }} />}
     </div>
   )
