@@ -279,39 +279,37 @@ function HeatCell({ v, max }) {
 
 /* ══ change-history log ══ */
 const fmtVerlaufDT = (ts) => new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(ts))
-function HistoryRow({ k }) {
+function HistoryRow({ e }) {
   const { t } = useLanguage()
+  const sub = e.von ? `${t('zt_geaendert_von')} ${e.von}` : e.gps != null ? `GPS · ${e.gps} m` : null
   return (
     <div className="flex items-start gap-3 py-2 border-b border-border/60 last:border-0">
-      <span className="text-[11px] font-mono text-muted shrink-0 w-[86px] pt-0.5">{fmtVerlaufDT(k.created_at)}</span>
-      <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style={{ background: '#e8821c1f' }}>
-        <Icon name="edit" size={12} color="#e8821c" />
+      <span className="text-[11px] font-mono text-muted shrink-0 w-[86px] pt-0.5">{fmtVerlaufDT(e.ts)}</span>
+      <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style={{ background: e.color + '1f' }}>
+        <Icon name={e.icon} size={12} color={e.color} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-sm leading-snug">{k.beschreibung || '—'}</div>
-        <div className="text-[11px] text-muted mt-0.5 truncate">
-          <span className="font-medium">{k.arbeiter_name || '—'}</span>
-          {k.von_user && <> · {t('zt_geaendert_von')} {k.von_user}</>}
-        </div>
+        <div className="text-sm leading-snug"><span className="font-medium">{e.name || '—'}</span> <span className="text-secondary">· {e.text}</span></div>
+        {sub && <div className="text-[11px] text-muted mt-0.5 truncate">{sub}</div>}
       </div>
     </div>
   )
 }
-function HistoryModal({ korrekturen, onClose }) {
+function HistoryModal({ events, onClose }) {
   const { t } = useLanguage()
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
          onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-bg-1 border border-border w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+      <div className="bg-bg-1 border border-border w-full sm:max-w-4xl rounded-t-2xl sm:rounded-2xl h-[94dvh] flex flex-col overflow-hidden">
         <div className="sm:hidden flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-border" /></div>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <h2 className="text-base font-semibold flex items-center gap-2"><Icon name="clock" size={16} color="#9b6bd9" /> {t('zt_verlauf')}
-            <span className="text-xs text-muted font-normal">· {korrekturen.length}</span></h2>
+            <span className="text-xs text-muted font-normal">· {events.length}</span></h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2"><Icon name="x" size={16} color="#9aa3ad" /></button>
         </div>
-        <div className="overflow-y-auto px-5 py-2">
-          {korrekturen.length === 0 ? <p className="text-sm text-muted text-center py-10">{t('zt_keine_aenderungen')}</p>
-            : korrekturen.map(k => <HistoryRow key={k.id} k={k} />)}
+        <div className="overflow-y-auto flex-1 px-5 py-2">
+          {events.length === 0 ? <p className="text-sm text-muted text-center py-10">{t('zt_keine_aenderungen')}</p>
+            : events.slice(0, 500).map((ev, i) => <HistoryRow key={i} e={ev} />)}
         </div>
       </div>
     </div>
@@ -536,6 +534,19 @@ export default function ZeiterfassungPage() {
     .filter(o => o.min > 0).sort((a, b) => b.min - a.min).slice(0, 5)
   const overBarMax = Math.max(1, ...overBars.map(o => o.min))
 
+  // full change/event log — check-in, check-out, breaks and manager edits
+  const verlauf = []
+  arbeitszeiten.forEach(a => {
+    if (a.kommen_at) verlauf.push({ ts: a.kommen_at, name: a.arbeiter_name, text: t('zt_kommen'), color: '#4caf6e', icon: 'arrowDown', gps: a.kommen_distanz })
+    if (a.gehen_at) verlauf.push({ ts: a.gehen_at, name: a.arbeiter_name, text: t('zt_gehen'), color: '#e0524a', icon: 'arrowUp' })
+    ;(Array.isArray(a.pausen) ? a.pausen : []).forEach(p => {
+      if (p.s) verlauf.push({ ts: p.s, name: a.arbeiter_name, text: t('zt_pause_gestartet'), color: '#e8821c', icon: 'refresh' })
+      if (p.e) verlauf.push({ ts: p.e, name: a.arbeiter_name, text: t('zt_pause_ende'), color: '#3fb6c4', icon: 'refresh' })
+    })
+  })
+  korrekturen.forEach(k => verlauf.push({ ts: k.created_at, name: k.arbeiter_name, text: k.beschreibung || t('zt_verlauf'), color: '#9b6bd9', icon: 'edit', von: k.von_user }))
+  verlauf.sort((a, b) => new Date(b.ts) - new Date(a.ts))
+
   const exportExcel = () => {
     const head = [t('zt_col_datum'), t('zt_col_arbeiter'), t('zt_kommen'), t('zt_gehen'), t('zt_pause'), t('zt_col_arbeitszeit'), t('zt_col_ueberstunden')]
     const body = rows.map(r => [fmtDatum(r.datum), r.arbeiter_name, fmtUhr(r.start), r.offen ? '—' : fmtUhr(r.ende), fmtStd(r.pauseMin), fmtStd(r.nettoMin), fmtStdSigned(r.over)])
@@ -580,7 +591,7 @@ export default function ZeiterfassungPage() {
 
   /* ══ MANAGER DASHBOARD ══ */
   return (
-    <div className="p-3 sm:p-6 lg:p-8 overflow-x-hidden">
+    <div className="p-3 sm:p-6 lg:p-8 overflow-x-hidden flex flex-col min-h-full">
       {/* header */}
       <div className="flex items-start justify-between gap-3 flex-wrap mb-5">
         <div>
@@ -793,7 +804,7 @@ export default function ZeiterfassungPage() {
       {/* ══ ANALYTICS — 5 equal cards ══ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         {/* Arbeitszeit pro Tag */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[220px] flex flex-col">
           <h3 className="text-xs font-semibold text-secondary mb-3 shrink-0">{t('zt_chart_pro_tag')}</h3>
           <div className="flex-1 flex items-end gap-1.5 min-h-0">
             {weekdayHours.map((h, i) => (
@@ -807,7 +818,7 @@ export default function ZeiterfassungPage() {
         </Card>
 
         {/* Arbeitszeit nach Projekt */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[220px] flex flex-col">
           <h3 className="text-xs font-semibold text-secondary mb-2 shrink-0">{t('zt_chart_projekt')}</h3>
           {projektDonut.length === 0 ? <p className="text-xs text-muted flex-1 flex items-center justify-center">{t('zt_keine')}</p> : (
             <div className="flex-1 flex flex-col items-center min-h-0">
@@ -832,7 +843,7 @@ export default function ZeiterfassungPage() {
         </Card>
 
         {/* Pausenverteilung */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[220px] flex flex-col">
           <h3 className="text-xs font-semibold text-secondary mb-2 shrink-0">{t('zt_chart_pause')}</h3>
           {pauseDonut.length === 0 ? <p className="text-xs text-muted flex-1 flex items-center justify-center">{t('zt_keine')}</p> : (
             <div className="flex-1 flex flex-col items-center min-h-0">
@@ -857,7 +868,7 @@ export default function ZeiterfassungPage() {
         </Card>
 
         {/* Überstunden diese Woche */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[220px] flex flex-col">
           <h3 className="text-xs font-semibold text-secondary mb-3 shrink-0">{t('zt_chart_ueberstunden')}</h3>
           {overBars.length === 0 ? <p className="text-xs text-muted flex-1 flex items-center justify-center">{t('zt_keine')}</p> : (
             <div className="space-y-3 overflow-y-auto flex-1 min-h-0 pr-1">
@@ -877,7 +888,7 @@ export default function ZeiterfassungPage() {
         </Card>
 
         {/* GPS Check-ins */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[220px] flex flex-col">
           <h3 className="text-xs font-semibold text-secondary mb-3 shrink-0">{t('zt_gps_checkins')}</h3>
           <div className="flex items-center gap-2 mb-3 shrink-0">
             <div className="flex-1 rounded-xl border border-green/30 bg-green-dim p-2 text-center">
@@ -905,28 +916,29 @@ export default function ZeiterfassungPage() {
         </Card>
       </div>
 
-      {/* ══ VERLAUF — change history log (click to expand) ══ */}
+      {/* ══ VERLAUF — full event log (click to expand); grows to fill
+          the remaining page height ══ */}
       <Card onClick={() => setShowHistory(true)}
-            className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] cursor-pointer">
-        <div className="flex items-center justify-between mb-3">
+            className="p-4 mt-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] cursor-pointer flex-1 min-h-[240px] flex flex-col">
+        <div className="flex items-center justify-between mb-3 shrink-0">
           <h3 className="font-semibold text-sm flex items-center gap-2">
             <Icon name="clock" size={15} color="#9b6bd9" /> {t('zt_verlauf')}
-            <span className="text-[11px] text-muted font-normal">· {korrekturen.length}</span>
+            <span className="text-[11px] text-muted font-normal">· {verlauf.length}</span>
           </h3>
           <span className="text-[11px] font-medium text-amber inline-flex items-center gap-0.5">
             {t('zt_alle_anzeigen')} <Icon name="chevronRight" size={12} color="#e8821c" />
           </span>
         </div>
-        {korrekturen.length === 0 ? (
+        {verlauf.length === 0 ? (
           <p className="text-xs text-muted text-center py-6">{t('zt_keine_aenderungen')}</p>
         ) : (
-          <div className="max-h-[260px] overflow-y-auto pr-1">
-            {korrekturen.slice(0, 40).map(k => <HistoryRow key={k.id} k={k} />)}
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+            {verlauf.slice(0, 120).map((ev, i) => <HistoryRow key={i} e={ev} />)}
           </div>
         )}
       </Card>
 
-      {showHistory && <HistoryModal korrekturen={korrekturen} onClose={() => setShowHistory(false)} />}
+      {showHistory && <HistoryModal events={verlauf} onClose={() => setShowHistory(false)} />}
       {editTag && <KorrekturModal tag={editTag} onClose={() => setEditTag(null)} onSaved={() => { setEditTag(null); load() }} />}
     </div>
   )
