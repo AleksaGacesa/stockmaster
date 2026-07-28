@@ -10,7 +10,7 @@ import DonutChart from '../components/DonutChart'
 import {
   arbeitstag, pausenMin, pauseLaeuft, fmtStd, fmtUhr, wochenStart,
 } from '../lib/arbeitszeitHelpers'
-import { distanzMeter } from '../lib/montagenHelpers'
+import { distanzMeter, montageArbeitMin } from '../lib/montagenHelpers'
 
 // Daily target (minutes) for a worker → drives overtime. Uses the
 // worker's own contract (weekly value spread over 5 workdays), then
@@ -35,6 +35,8 @@ const hms = (ms) => {
 }
 // Signed H:MM for overtime (can be negative = Minusstunden).
 const fmtStdSigned = (min) => `${min < 0 ? '−' : ''}${fmtStd(Math.abs(min))}`
+const fmtHM = (min) => { const v = Math.max(Math.round(min), 0); return `${Math.floor(v / 60)}h ${String(v % 60).padStart(2, '0')}m` }
+const WD = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 const initialen = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
 const AV = ['#e8821c', '#4a90d9', '#4caf6e', '#9b6bd9', '#d96b8f', '#3fb6c4']
 const avColor = (n = '') => AV[[...n].reduce((s, c) => s + c.charCodeAt(0), 0) % AV.length]
@@ -138,59 +140,52 @@ function StatusHeuteCard({ firma, anwesendCount, totalCount, onChanged }) {
     await supabase.from('arbeitszeiten').update({ gehen_at: new Date().toISOString(), pausen: segs }).eq('id', mine.id); setBusy(false); refresh()
   }
 
-  const pct = totalCount > 0 ? Math.round((anwesendCount / totalCount) * 100) : 0
-  const donut = [
-    { label: 'an', value: anwesendCount, color: '#4caf6e' },
-    { label: 'ab', value: Math.max(totalCount - anwesendCount, 0), color: 'rgb(var(--bg-3))' },
-  ]
   const netMs = mine ? Math.max((nowT - new Date(mine.kommen_at).getTime()) - pausenMin(mine) * 60000, 0) : 0
-  const heuteBisher = Math.round(arbeitstag(heute.filter(a => a.gehen_at)).nettoMin)
+  const pausiert = mine && pauseLaeuft(mine)
+  const ring = pausiert ? '#e8821c' : mine ? '#4caf6e' : 'rgb(var(--border-strong))'
+  const uhr = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(nowT))
 
   return (
-    <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex flex-col">
-      <div className="flex items-center gap-2 mb-2">
-        <StatusDot color="#4caf6e" pulse size={8} />
-        <span className="text-xs text-secondary">{t('zt_status_heute')}</span>
+    <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex flex-col h-full">
+      <div className="flex items-center gap-2 mb-3 shrink-0">
+        <Icon name="clock" size={15} color="#4a90d9" />
+        <span className="text-sm font-semibold">{t('zt_kommen_gehen')}</span>
       </div>
-      <div className="text-[11px] text-green font-medium mb-2">{t('zt_jetzt_anwesend')}</div>
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div>
-          <div className="font-bold font-mono leading-none"><span className="text-2xl">{anwesendCount}</span><span className="text-sm text-muted"> / {totalCount}</span></div>
-          <div className="text-[11px] text-muted mt-1">{t('zt_im_team')}</div>
-        </div>
-        <div className="relative shrink-0">
-          <DonutChart data={donut} size={64} />
-          <div className="absolute inset-0 flex items-center justify-center text-[11px] font-bold font-mono">{pct}%</div>
+      {/* circular live clock */}
+      <div className="flex-1 flex items-center justify-center min-h-0">
+        <div className="relative w-36 h-36 rounded-full flex flex-col items-center justify-center"
+             style={{ border: `5px solid ${ring}` }}>
+          <span className="text-[10px] text-muted">{t('zt_aktuelle_uhrzeit')}</span>
+          <span className="text-2xl font-bold font-mono tabular-nums leading-tight">{uhr}</span>
+          <span className="text-[10px] text-muted">{fmtDatum(dateKey())}</span>
+          {mine && <span className="text-[10px] font-mono font-semibold mt-0.5" style={{ color: ring }}>{hms(netMs)}</span>}
         </div>
       </div>
-      {!mine ? (
-        <button onClick={kommen} disabled={busy}
-                className="mt-auto w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60"
+      {/* GPS status */}
+      <div className="flex items-center justify-center gap-1.5 text-[11px] my-3 shrink-0">
+        <StatusDot color={firma?.firma_lat != null ? '#4caf6e' : '#9aa3ad'} size={7} pulse={firma?.firma_lat != null} />
+        <span className="text-secondary truncate">{firma?.firma_lat != null ? (firma?.adresse ? `GPS · ${firma.adresse}` : t('zt_gps_verbunden')) : t('zt_gps_aus')}</span>
+      </div>
+      {/* actions */}
+      <div className="space-y-2 shrink-0">
+        {mine && (
+          <button onClick={togglePause} disabled={busy}
+                  className="w-full py-2 rounded-xl text-sm font-semibold border transition-all"
+                  style={pausiert ? { background: 'var(--color-amber-dim)', borderColor: '#e8821c', color: '#e8821c' } : { background: 'rgb(var(--bg-2))', borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>
+            {pausiert ? t('zt_pause_ende') : t('zt_pause')}
+          </button>
+        )}
+        <button onClick={kommen} disabled={busy || !!mine}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40"
                 style={{ background: '#4caf6e' }}>
-          <Icon name="arrowDown" size={15} color="#fff" /> {heute.length > 0 ? t('zt_wieder_kommen') : t('zt_kommen')}
+          <Icon name="arrowDown" size={15} color="#fff" /> {t('zt_kommen')}
         </button>
-      ) : (
-        <div className="mt-auto">
-          <div className="flex items-center justify-between text-[11px] mb-1.5">
-            <span className="text-muted">{t('zt_gearbeitet')}</span>
-            <span className="font-mono font-semibold tabular-nums" style={{ color: pauseLaeuft(mine) ? '#e8821c' : '#4caf6e' }}>{hms(netMs)}</span>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={togglePause} disabled={busy}
-                    className="flex-1 py-2 rounded-lg text-xs font-semibold border transition-all"
-                    style={pauseLaeuft(mine) ? { background: 'var(--color-amber-dim)', borderColor: '#e8821c', color: '#e8821c' } : { background: 'rgb(var(--bg-2))', borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>
-              {pauseLaeuft(mine) ? t('zt_pause_ende') : t('zt_pause')}
-            </button>
-            <button onClick={gehen} disabled={busy}
-                    className="flex-1 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-60" style={{ background: '#e0524a' }}>
-              {t('zt_gehen')}
-            </button>
-          </div>
-        </div>
-      )}
-      {heute.length > 0 && !mine && (
-        <div className="text-[10px] text-muted text-center mt-1.5">{t('zt_heute_bisher')}: <span className="font-mono">{fmtStd(heuteBisher)}</span></div>
-      )}
+        <button onClick={gehen} disabled={busy || !mine}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border disabled:opacity-40"
+                style={{ borderColor: '#e0524a', color: '#e0524a', background: 'transparent' }}>
+          <Icon name="arrowUp" size={15} color="#e0524a" /> {t('zt_gehen')}
+        </button>
+      </div>
     </Card>
   )
 }
@@ -451,6 +446,54 @@ export default function ZeiterfassungPage() {
   }))
   const heatMax = Math.max(1, ...heatData.flatMap(r => r.cells))
 
+  /* ── dashboard aggregates (mockup) ── */
+  const abwesendHeute = Math.max(profiles.length - anwesendCount, 0)
+  const projekteAktiv = new Set(heuteMon.filter(m => m.projekt_id).map(m => m.projekt_id)).size
+  const gpsGesamt = heuteAz.filter(a => a.kommen_at).length
+  const gpsBestaetigt = heuteAz.filter(a => a.kommen_at && a.kommen_distanz != null && a.kommen_distanz <= gpsRadius).length
+  const gpsOffen = Math.max(gpsGesamt - gpsBestaetigt, 0)
+
+  // team status counts
+  const pauseIds = new Set(aufPause.map(w => w.id))
+  const teamPause = pauseIds.size
+  const teamStatus = [
+    { label: t('zt_anwesend'), value: anwesendCount, color: '#4caf6e' },
+    { label: t('zt_auf_pause'), value: teamPause, color: '#e8821c' },
+    { label: t('zt_abwesend'), value: abwesendHeute, color: '#e0524a' },
+  ]
+
+  // activity feed today (Kommen / Pause / Gehen)
+  const aktivitaeten = []
+  heuteAz.forEach(a => {
+    if (a.kommen_at) aktivitaeten.push({ at: a.kommen_at, name: a.arbeiter_name, text: t('zt_kommen'), color: '#4caf6e' })
+    if (a.gehen_at) aktivitaeten.push({ at: a.gehen_at, name: a.arbeiter_name, text: t('zt_gehen'), color: '#e0524a' })
+    ;(Array.isArray(a.pausen) ? a.pausen : []).forEach(p => { if (p.s) aktivitaeten.push({ at: p.s, name: a.arbeiter_name, text: t('zt_pause_gestartet'), color: '#e8821c' }) })
+  })
+  aktivitaeten.sort((a, b) => new Date(b.at) - new Date(a.at))
+
+  // work hours per weekday (current week)
+  const wdColors = ['#4a90d9']
+  const weekdayHours = weekDays.map(dk => tagFor(dk).reduce((s, g) => s + g.nettoMin, 0) / 60)
+  const weekdayMax = Math.max(1, ...weekdayHours)
+
+  // hours per project (current week, from montagen)
+  const projMin = new Map()
+  montagen.filter(m => inWeek(m.datum)).forEach(m => { const n = m.projekt?.name; if (!n) return; projMin.set(n, (projMin.get(n) ?? 0) + montageArbeitMin(m)) })
+  const PROJ_COLORS = ['#4a90d9', '#4caf6e', '#e8821c', '#9b6bd9', '#3fb6c4', '#d96b8f']
+  const projektDonut = [...projMin.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([name, min], i) => ({ label: name, value: Math.round(min), color: PROJ_COLORS[i % PROJ_COLORS.length] }))
+  const projektGesamtMin = projektDonut.reduce((s, d) => s + d.value, 0)
+
+  // pause distribution today (by worker — we don't track pause type)
+  const pauseByW = tagFor(selKey).filter(g => g.pauseMin > 0).sort((a, b) => b.pauseMin - a.pauseMin)
+  const pauseDonut = pauseByW.slice(0, 6).map((g, i) => ({ label: g.arbeiter_name, value: Math.round(g.pauseMin), color: PROJ_COLORS[i % PROJ_COLORS.length] }))
+  const pauseGesamtMin = pauseDonut.reduce((s, d) => s + d.value, 0)
+
+  // overtime bars (current week, top workers)
+  const overBars = [...overByWorker.entries()].map(([id, m]) => ({ name: profMap.get(id)?.display_name ?? '—', min: m }))
+    .filter(o => o.min > 0).sort((a, b) => b.min - a.min).slice(0, 5)
+  const overBarMax = Math.max(1, ...overBars.map(o => o.min))
+
   const exportExcel = () => {
     const head = [t('zt_col_datum'), t('zt_col_arbeiter'), t('zt_kommen'), t('zt_gehen'), t('zt_pause'), t('zt_col_arbeitszeit'), t('zt_col_ueberstunden')]
     const body = rows.map(r => [fmtDatum(r.datum), r.arbeiter_name, fmtUhr(r.start), r.offen ? '—' : fmtUhr(r.ende), fmtStd(r.pauseMin), fmtStd(r.nettoMin), fmtStdSigned(r.over)])
@@ -517,49 +560,53 @@ export default function ZeiterfassungPage() {
         </div>
       </div>
 
-      {/* ══ KPI bento — own clock (2×2) + metrics ══ */}
-      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
-        <div className="col-span-2 xl:row-span-2">
-          <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
-        </div>
-        <StatCard label={t('zt_stunden_heute')} icon="clock" color="#4a90d9" value={fmtStd(heuteA.netto)} unit="h"
-                  sub={deltaStr(heuteA.netto - gesternA.netto)} subColor={deltaCol(heuteA.netto - gesternA.netto)} spark={nettoSpark} />
-        <StatCard label={t('zt_durchschnitt')} icon="user" color="#9b6bd9" value={fmtStd(durchschnittHeute)} unit="h"
-                  sub={deltaStr(durchschnittHeute - durchschnittGestern)} subColor={deltaCol(durchschnittHeute - durchschnittGestern)} spark={avgSpark} />
+      {/* ══ KPI row — 8 metrics ══ */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3 mb-4">
+        <StatCard label={t('zt_anwesend_jetzt')} icon="user" color="#4caf6e" value={`${anwesendCount}`} unit={`/ ${profiles.length}`}
+                  sub={`${profiles.length ? Math.round(anwesendCount / profiles.length * 100) : 0}% ${t('zt_des_teams')}`} subColor="rgb(var(--color-green))" />
+        <StatCard label={t('zt_gesamt_arbeitszeit')} icon="clock" color="#4a90d9" value={fmtStd(summeNetto)} unit="h"
+                  sub={deltaStr(heuteA.netto - gesternA.netto)} subColor={deltaCol(heuteA.netto - gesternA.netto)} />
         <StatCard label={t('zt_ueberstunden_woche')} icon="alarm" color="#e8821c" value={fmtStdSigned(ueberWoche)} unit="h"
                   sub={`${ueberWoche - ueberVorwoche >= 0 ? '+' : '−'}${fmtStd(Math.abs(ueberWoche - ueberVorwoche))} h ${t('mon_vs_woche')}`}
-                  subColor={deltaCol(-(ueberWoche - ueberVorwoche))} spark={overSpark} />
+                  subColor={deltaCol(-(ueberWoche - ueberVorwoche))} />
+        <StatCard label={t('zt_durchschnitt')} icon="user" color="#9b6bd9" value={fmtStd(durchschnittHeute)} unit="h"
+                  sub={deltaStr(durchschnittHeute - durchschnittGestern)} subColor={deltaCol(durchschnittHeute - durchschnittGestern)} />
         <StatCard label={t('zt_pausen_heute')} icon="refresh" color="#3fb6c4" value={fmtStd(heuteA.pause)} unit="h"
-                  sub={`Ø ${fmtStd(pauseProMa)} ${t('zt_pro_ma')}`} spark={pauseSpark} />
-        {/* no-GPS check-in notifications */}
-        <StatCard label={t('zt_ohne_gps')} icon="mapPin" color="#e0524a">
-          <div className="text-2xl font-bold font-mono leading-none">{ohneGps.length}</div>
-          <div className="text-[11px] mt-1.5 truncate" style={{ color: ohneGps.length ? 'rgb(var(--color-red))' : 'rgb(var(--text-muted))' }}>
-            {ohneGps.length ? ohneGps.map(a => a.arbeiter_name).slice(0, 2).join(', ') : t('zt_alle_gps_ok')}
-          </div>
-        </StatCard>
-        {/* top / bottom work time today */}
-        <StatCard label={t('zt_top_arbeitszeit')} icon="chart" color="#4caf6e">
-          {ranking.length === 0 ? <div className="text-xs text-muted mt-1">{t('zt_keine')}</div> : (
-            <div className="space-y-1.5 mt-0.5">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="truncate flex items-center gap-1.5"><StatusDot color="#4caf6e" size={6} /> {ranking[0].arbeiter_name}</span>
-                <span className="font-mono font-semibold shrink-0">{fmtStd(ranking[0].nettoMin)} h</span>
-              </div>
-              {ranking.length > 1 && (
-                <div className="flex items-center justify-between gap-2 text-xs text-muted">
-                  <span className="truncate flex items-center gap-1.5"><StatusDot color="#9aa3ad" size={6} /> {ranking[ranking.length - 1].arbeiter_name}</span>
-                  <span className="font-mono shrink-0">{fmtStd(ranking[ranking.length - 1].nettoMin)} h</span>
-                </div>
-              )}
-            </div>
-          )}
-        </StatCard>
+                  sub={`Ø ${fmtStd(pauseProMa)} ${t('zt_pro_ma')}`} />
+        <StatCard label={t('zt_fehlzeiten')} icon="alert" color="#e0524a" value={`${abwesendHeute}`}
+                  sub={`${profiles.length ? Math.round(abwesendHeute / profiles.length * 100) : 0}% ${t('zt_des_teams')}`} />
+        <StatCard label={t('zt_projekte_aktiv')} icon="building" color="#9aa3ad" value={`${projekteAktiv}`}
+                  sub={t('zt_heute_aktiv')} />
+        <StatCard label={t('zt_gps_checkins')} icon="mapPin" color="#4caf6e" value={`${gpsBestaetigt}`} unit={`/ ${gpsGesamt}`}
+                  sub={t('zt_heute_bestaetigt')} />
       </div>
 
-      {/* ══ MAIN — table + live rail, equal height ══ */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4 xl:h-[544px]">
-        {/* table (right) */}
+      {/* ══ MAIN — clock+summary · table · team+activities ══ */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 mb-4 xl:h-[460px]">
+        {/* LEFT — punch clock + today's summary */}
+        <div className="flex flex-col gap-4 min-h-0 order-1">
+          <div className="flex-1 min-h-0">
+            <StatusHeuteCard firma={firma} anwesendCount={anwesendCount} totalCount={profiles.length} onChanged={load} />
+          </div>
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] shrink-0">
+            <h3 className="text-xs font-semibold text-secondary mb-2.5">{t('zt_heutige_zusammenfassung')}</h3>
+            <div className="space-y-1.5 text-sm">
+              {[
+                { i: 'clock', c: '#4a90d9', l: t('zt_col_arbeitszeit'), v: `${fmtStd(heuteA.netto)} h` },
+                { i: 'alarm', c: '#e8821c', l: t('zt_col_ueberstunden'), v: `${fmtStdSigned(ueberWoche)} h` },
+                { i: 'refresh', c: '#3fb6c4', l: t('zt_pausen_heute'), v: `${fmtStd(heuteA.pause)} h` },
+                { i: 'user', c: '#9b6bd9', l: t('zt_durchschnitt'), v: `${fmtStd(durchschnittHeute)} h` },
+              ].map(r => (
+                <div key={r.l} className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-secondary text-xs"><Icon name={r.i} size={14} color={r.c} /> {r.l}</span>
+                  <span className="font-mono font-semibold">{r.v}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        {/* CENTER — table */}
         <div className="xl:col-span-2 min-w-0 min-h-0 order-2">
           <Card className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-full flex flex-col">
             <div className="flex flex-wrap items-center gap-2 p-3 border-b border-border shrink-0">
@@ -659,79 +706,82 @@ export default function ZeiterfassungPage() {
           </Card>
         </div>
 
-        {/* LEFT rail — live team, same height as the table */}
-        <div className="min-w-0 min-h-0 flex flex-col gap-4 order-1">
-          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 min-h-0 flex flex-col">
-            <div className="flex items-center justify-between mb-3 shrink-0">
-              <h3 className="font-semibold text-sm flex items-center gap-2"><StatusDot color="#4caf6e" pulse size={8} /> {t('zt_live_team')}</h3>
-              <span className="text-[11px] text-muted font-mono">{anwesendCount}/{profiles.length}</span>
+        {/* RIGHT — team status + activity feed */}
+        <div className="flex flex-col gap-4 min-h-0 order-3">
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] shrink-0">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm">{t('zt_team_status')}</h3>
+              <span className="text-[11px] text-muted font-mono">{anwesendCount}/{profiles.length} {t('zt_anwesend').toLowerCase()}</span>
             </div>
-            <div className="space-y-0.5 flex-1 min-h-0 overflow-y-auto pr-1">
-              {teamList.map(u => (
-                <div key={u.id} className="flex items-center gap-2.5 px-1 py-1.5">
-                  <StatusDot color={u.anwesend ? '#4caf6e' : '#9aa3ad'} pulse={u.anwesend} size={8} />
-                  <span className={`flex-1 min-w-0 truncate text-sm ${u.anwesend ? 'text-primary' : 'text-muted'}`}>{u.display_name}</span>
-                  {projektOf(u.id) && <span className="text-[10px] text-amber truncate max-w-[80px]">{projektOf(u.id)}</span>}
-                  <span className="text-[10px] text-muted shrink-0">{roleLabel(u.role)}</span>
+            <div className="space-y-2">
+              {teamStatus.map(s => (
+                <div key={s.label} className="flex items-center gap-2.5">
+                  <StatusDot color={s.color} size={9} pulse={s.color === '#4caf6e' && s.value > 0} />
+                  <span className="flex-1 text-sm text-secondary">{s.label}</span>
+                  <span className="text-sm font-mono font-bold">{s.value}</span>
                 </div>
               ))}
+              <div className="flex items-center gap-2.5 border-t border-border pt-2 mt-1">
+                <StatusDot color="#9aa3ad" size={9} />
+                <span className="flex-1 text-sm font-medium">{t('zt_gesamt')}</span>
+                <span className="text-sm font-mono font-bold">{profiles.length}</span>
+              </div>
             </div>
+            <button onClick={() => setFilterArbeiter('alle')} className="w-full mt-3 py-2 rounded-lg text-xs text-secondary border border-border hover:bg-bg-2 transition-colors">{t('zt_alle_mitarbeiter')}</button>
+          </Card>
+
+          <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex-1 min-h-0 flex flex-col">
+            <h3 className="font-semibold text-sm mb-3 shrink-0">{t('zt_aktivitaeten')}</h3>
+            {aktivitaeten.length === 0 ? <p className="text-xs text-muted">{t('zt_keine')}</p> : (
+              <div className="space-y-2.5 flex-1 min-h-0 overflow-y-auto pr-1">
+                {aktivitaeten.slice(0, 20).map((a, i) => (
+                  <div key={i} className="flex items-center gap-2.5">
+                    <span className="text-[11px] font-mono text-muted shrink-0 w-10">{fmtUhr(a.at)}</span>
+                    <StatusDot color={a.color} size={7} />
+                    <span className="flex-1 min-w-0 truncate text-sm">{a.name}</span>
+                    <span className="text-[11px] shrink-0" style={{ color: a.color }}>{a.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </div>
 
-      {/* ══ OPS strip — four equal live cards ══ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[196px] flex flex-col">
-          <h3 className="text-xs font-semibold text-secondary flex items-center gap-1.5 mb-2 shrink-0"><Icon name="refresh" size={13} color="#3fb6c4" /> {t('zt_auf_pause')}</h3>
-          {aufPause.length === 0 ? <p className="text-xs text-muted">{t('zt_niemand')}</p> : (
-            <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0 pr-1">{aufPause.map(w => (
-              <div key={w.id} className="flex items-center gap-2"><Avatar name={w.name} size={22} /><span className="text-xs truncate">{w.name}</span></div>
-            ))}</div>
-          )}
+      {/* ══ ANALYTICS — 5 equal cards ══ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+        {/* Arbeitszeit pro Tag */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary mb-3 shrink-0">{t('zt_chart_pro_tag')}</h3>
+          <div className="flex-1 flex items-end gap-1.5 min-h-0">
+            {weekdayHours.map((h, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0 h-full justify-end">
+                <div className="w-full rounded-t-md transition-all duration-500" title={`${h.toFixed(1)} h`}
+                     style={{ height: `${(h / weekdayMax) * 100}%`, minHeight: h > 0 ? '4px' : '2px', background: h > 0 ? '#4a90d9' : 'rgb(var(--bg-3))' }} />
+                <span className="text-[10px] text-muted">{WD[i]}</span>
+              </div>
+            ))}
+          </div>
         </Card>
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[196px] flex flex-col">
-          <h3 className="text-xs font-semibold text-secondary flex items-center gap-1.5 mb-2 shrink-0"><Icon name="truck" size={13} color="#e8821c" /> {t('zt_auf_montage')}</h3>
-          {aufMontage.length === 0 ? <p className="text-xs text-muted">{t('zt_niemand')}</p> : (
-            <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0 pr-1">{aufMontage.map(w => (
-              <div key={w.id} className="flex items-center gap-2 min-w-0"><Avatar name={w.name} size={22} /><span className="text-xs truncate flex-1">{w.name}</span>{w.projekt && <span className="text-[10px] text-amber truncate max-w-[64px]">{w.projekt}</span>}</div>
-            ))}</div>
-          )}
-        </Card>
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[196px] flex flex-col">
-          <h3 className="text-xs font-semibold text-secondary flex items-center gap-1.5 mb-2 shrink-0"><Icon name="alarm" size={13} color="#e0524a" /> {t('zt_ueberstunden_alarm')}</h3>
-          {alerts.length === 0 ? <p className="text-xs text-muted">{t('zt_keine_alarme')}</p> : (
-            <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">{alerts.map(a => (
-              <div key={a.id} className="flex items-center gap-2"><Avatar name={a.name} size={22} /><span className="flex-1 min-w-0 truncate text-xs">{a.name}</span><span className="text-xs font-mono font-bold text-amber shrink-0">+{fmtStd(a.min)}</span></div>
-            ))}</div>
-          )}
-        </Card>
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[196px] flex flex-col">
-          <h3 className="text-xs font-semibold text-secondary flex items-center gap-1.5 mb-2 shrink-0"><Icon name="clock" size={13} color="#9b6bd9" /> {t('zt_letzte_anmeldungen')}</h3>
-          {letzteAnmeldungen.length === 0 ? <p className="text-xs text-muted">{t('zt_keine')}</p> : (
-            <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0 pr-1">{letzteAnmeldungen.map((a, i) => (
-              <div key={`${a.id}-${i}`} className="flex items-center gap-2"><Avatar name={a.arbeiter_name} size={22} /><span className="flex-1 min-w-0 truncate text-xs">{a.arbeiter_name}</span><span className="text-[11px] font-mono text-muted shrink-0">{fmtUhr(a.kommen_at)}</span></div>
-            ))}</div>
-          )}
-        </Card>
-      </div>
 
-      {/* ══ ANALYTICS ══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Heatmap */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] lg:col-span-2 h-full">
-          <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="chart" size={15} color="#4a90d9" /> {t('zt_heatmap')}</h3>
-          {heatData.length === 0 ? <p className="text-xs text-muted text-center py-6">{t('zt_keine')}</p> : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[420px] space-y-1">
-                <div className="grid gap-1 items-center" style={{ gridTemplateColumns: '96px repeat(7,1fr)' }}>
-                  <span />
-                  {weekDays.map(dk => <span key={dk} className="text-[10px] text-muted text-center capitalize">{new Intl.DateTimeFormat('de-DE', { weekday: 'short' }).format(new Date(dk + 'T12:00:00'))}</span>)}
+        {/* Arbeitszeit nach Projekt */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary mb-2 shrink-0">{t('zt_chart_projekt')}</h3>
+          {projektDonut.length === 0 ? <p className="text-xs text-muted flex-1 flex items-center justify-center">{t('zt_keine')}</p> : (
+            <div className="flex-1 flex flex-col items-center min-h-0">
+              <div className="relative shrink-0">
+                <DonutChart data={projektDonut} size={96} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-xs font-bold font-mono">{fmtHM(projektGesamtMin)}</span>
+                  <span className="text-[9px] text-muted">{t('zt_gesamt')}</span>
                 </div>
-                {heatData.map(row => (
-                  <div key={row.name} className="grid gap-1 items-center" style={{ gridTemplateColumns: '96px repeat(7,1fr)' }}>
-                    <span className="text-xs truncate pr-1">{row.name}</span>
-                    {row.cells.map((v, i) => <HeatCell key={i} v={v} max={heatMax} />)}
+              </div>
+              <div className="w-full mt-2 space-y-1 overflow-y-auto flex-1 min-h-0 pr-1">
+                {projektDonut.map(d => (
+                  <div key={d.label} className="flex items-center gap-1.5 text-[11px]">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />
+                    <span className="flex-1 min-w-0 truncate text-secondary">{d.label}</span>
+                    <span className="font-mono shrink-0">{fmtHM(d.value)}</span>
                   </div>
                 ))}
               </div>
@@ -739,22 +789,76 @@ export default function ZeiterfassungPage() {
           )}
         </Card>
 
-        {/* Ankünfte nach Uhrzeit */}
-        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-full">
-          <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Icon name="clock" size={15} color="#4a90d9" /> {t('zt_ankuenfte')}</h3>
-          <ArrivalBars data={arrHours} t={t} />
-          <div className="flex items-center justify-between text-[11px] text-muted mt-2 pt-2 border-t border-border">
-            <span>{t('zt_top_arbeitszeit')}</span>
-          </div>
-          <div className="space-y-1.5 mt-2">
-            {ranking.slice(0, 3).map((g, i) => (
-              <div key={g.arbeiter_id} className="flex items-center gap-2">
-                <span className={`w-4 text-center text-xs font-bold ${i === 0 ? 'text-amber' : 'text-muted'}`}>{i + 1}</span>
-                <span className="flex-1 min-w-0 truncate text-xs">{g.arbeiter_name}</span>
-                <span className={`text-xs font-mono font-semibold ${i === 0 ? 'text-amber' : ''}`}>{fmtStd(g.nettoMin)} h</span>
+        {/* Pausenverteilung */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary mb-2 shrink-0">{t('zt_chart_pause')}</h3>
+          {pauseDonut.length === 0 ? <p className="text-xs text-muted flex-1 flex items-center justify-center">{t('zt_keine')}</p> : (
+            <div className="flex-1 flex flex-col items-center min-h-0">
+              <div className="relative shrink-0">
+                <DonutChart data={pauseDonut} size={96} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-xs font-bold font-mono">{fmtHM(pauseGesamtMin)}</span>
+                  <span className="text-[9px] text-muted">{t('zt_gesamt')}</span>
+                </div>
               </div>
-            ))}
-            {ranking.length === 0 && <p className="text-xs text-muted text-center py-1">{t('zt_keine')}</p>}
+              <div className="w-full mt-2 space-y-1 overflow-y-auto flex-1 min-h-0 pr-1">
+                {pauseDonut.map(d => (
+                  <div key={d.label} className="flex items-center gap-1.5 text-[11px]">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />
+                    <span className="flex-1 min-w-0 truncate text-secondary">{d.label}</span>
+                    <span className="font-mono shrink-0">{fmtHM(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Überstunden diese Woche */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary mb-3 shrink-0">{t('zt_chart_ueberstunden')}</h3>
+          {overBars.length === 0 ? <p className="text-xs text-muted flex-1 flex items-center justify-center">{t('zt_keine')}</p> : (
+            <div className="space-y-3 overflow-y-auto flex-1 min-h-0 pr-1">
+              {overBars.map(o => (
+                <div key={o.name}>
+                  <div className="flex items-center justify-between text-[11px] mb-1">
+                    <span className="flex items-center gap-1.5 min-w-0"><span className="w-2 h-2 rounded-full bg-amber shrink-0" /><span className="truncate">{o.name}</span></span>
+                    <span className="font-mono font-semibold text-amber shrink-0">{fmtHM(o.min)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-bg-3 overflow-hidden ml-3.5">
+                    <div className="h-full rounded-full" style={{ width: `${(o.min / overBarMax) * 100}%`, background: '#e8821c' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* GPS Check-ins */}
+        <Card className="p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)] h-[260px] flex flex-col">
+          <h3 className="text-xs font-semibold text-secondary mb-3 shrink-0">{t('zt_gps_checkins')}</h3>
+          <div className="flex items-center gap-2 mb-3 shrink-0">
+            <div className="flex-1 rounded-xl border border-green/30 bg-green-dim p-2 text-center">
+              <div className="text-lg font-bold font-mono text-green leading-none">{gpsBestaetigt}</div>
+              <div className="text-[10px] text-muted mt-0.5">{t('zt_bestaetigt')}</div>
+            </div>
+            <div className="flex-1 rounded-xl border border-border bg-bg-2 p-2 text-center">
+              <div className="text-lg font-bold font-mono leading-none">{gpsOffen}</div>
+              <div className="text-[10px] text-muted mt-0.5">{t('zt_offen')}</div>
+            </div>
+          </div>
+          <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0 pr-1">
+            {heuteAz.filter(a => a.kommen_at).slice(0, 8).map((a, i) => {
+              const ok = a.kommen_distanz != null && a.kommen_distanz <= gpsRadius
+              return (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <Icon name={ok ? 'mapPin' : 'alert'} size={12} color={ok ? 'rgb(var(--color-green))' : '#e8821c'} />
+                  <span className="flex-1 min-w-0 truncate">{a.arbeiter_name}</span>
+                  <span className="font-mono text-[11px] text-muted shrink-0">{a.kommen_distanz != null ? `${a.kommen_distanz} m` : t('zt_ohne_gps')}</span>
+                </div>
+              )
+            })}
+            {gpsGesamt === 0 && <p className="text-xs text-muted text-center py-2">{t('zt_keine')}</p>}
           </div>
         </Card>
       </div>
