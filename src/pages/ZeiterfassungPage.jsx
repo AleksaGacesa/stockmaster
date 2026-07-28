@@ -417,8 +417,13 @@ export default function ZeiterfassungPage() {
     return { netto, pause, workers }
   }
   const heuteA = dayAgg(selKey), gesternA = dayAgg(gesternKey)
-  const anwesendIds = new Set(tagFor(selKey).filter(g => g.nettoMin > 0 || g.offen).map(g => g.arbeiter_id))
+  // "Anwesend jetzt" = a running session right now (Kommen without
+  // Gehen / open montage) — NOT someone who worked earlier and left.
+  const anwesendIds = new Set(tagFor(selKey).filter(g => g.offen).map(g => g.arbeiter_id))
   const anwesendCount = anwesendIds.size
+  // Came to work at all today (for Fehlzeiten = never showed up).
+  const praesentHeuteIds = new Set(tagFor(selKey).filter(g => g.nettoMin > 0 || g.offen).map(g => g.arbeiter_id))
+  const fehlzeitenHeute = Math.max(profiles.length - praesentHeuteIds.size, 0)
 
   // week overtime (week of selDate)
   const weekStartD = wochenStart(0)  // current week (relative to now)
@@ -549,7 +554,7 @@ export default function ZeiterfassungPage() {
   const pauseIds = new Set(aufPause.map(w => w.id))
   const teamPause = pauseIds.size
   const teamStatus = [
-    { label: t('zt_anwesend'), value: anwesendCount, color: '#4caf6e' },
+    { label: t('zt_anwesend'), value: Math.max(anwesendCount - teamPause, 0), color: '#4caf6e' },
     { label: t('zt_auf_pause'), value: teamPause, color: '#e8821c' },
     { label: t('zt_abwesend'), value: abwesendHeute, color: '#e0524a' },
   ]
@@ -678,8 +683,8 @@ export default function ZeiterfassungPage() {
                   sub={deltaStr(durchschnittHeute - durchschnittGestern)} subColor={deltaCol(durchschnittHeute - durchschnittGestern)} />
         <StatCard label={t('zt_pausen_heute')} icon="refresh" color="#3fb6c4" value={fmtStd(heuteA.pause)} unit="h"
                   sub={`Ø ${fmtStd(pauseProMa)} ${t('zt_pro_ma')}`} />
-        <StatCard label={t('zt_fehlzeiten')} icon="alert" color="#e0524a" value={`${abwesendHeute}`}
-                  sub={`${profiles.length ? Math.round(abwesendHeute / profiles.length * 100) : 0}% ${t('zt_des_teams')}`} />
+        <StatCard label={t('zt_fehlzeiten')} icon="alert" color="#e0524a" value={`${fehlzeitenHeute}`}
+                  sub={`${profiles.length ? Math.round(fehlzeitenHeute / profiles.length * 100) : 0}% ${t('zt_des_teams')}`} />
         <StatCard label={t('zt_projekte_aktiv')} icon="building" color="#9aa3ad" value={`${projekteAktiv}`}
                   sub={t('zt_heute_aktiv')} />
         <StatCard label={t('zt_gps_checkins')} icon="mapPin" color="#4caf6e" value={`${gpsBestaetigt}`} unit={`/ ${gpsGesamt}`}
