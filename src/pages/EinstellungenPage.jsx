@@ -119,8 +119,8 @@ function UserForm({ newName, setNewName, newEmail, setNewEmail, newPassword, set
     <div className="bg-bg-2 rounded-xl p-4 mb-4 space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {[
-          { label: t('lief_field_name'), value: newName, setter: setNewName, type: 'text', ph: 'Ivan Petrović', autoComplete: 'off' },
-          { label: t('lief_field_email'), value: newEmail, setter: setNewEmail, type: 'email', ph: 'ivan@firma.de', autoComplete: 'off' },
+          { label: t('lief_field_name'), value: newName, setter: setNewName, type: 'text', ph: 'Max Mustermann', autoComplete: 'off' },
+          { label: t('lief_field_email'), value: newEmail, setter: setNewEmail, type: 'email', ph: 'max.mustermann@firma.de', autoComplete: 'off' },
           { label: t('set_field_password'), value: newPassword, setter: setNewPassword, type: 'password', ph: t('set_password_ph'), autoComplete: 'new-password' },
         ].map(f => (
           <div key={f.label}>

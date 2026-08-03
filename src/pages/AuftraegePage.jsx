@@ -134,7 +134,7 @@ function ProjektFormModal({ projekt, users, onClose, onSaved }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2">
               <label className="block text-xs text-secondary mb-1">{t('auf_field_name')}</label>
-              <input type="text" value={form.name} placeholder="Ograda Müller" autoComplete="off"
+              <input type="text" value={form.name} placeholder="Dachsanierung Müller" autoComplete="off"
                      onChange={e => up('name', e.target.value)}
                      className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber" />
             </div>
