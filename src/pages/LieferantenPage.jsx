@@ -302,7 +302,7 @@ function LiefStatCard({ label, value, sub, subColor, icon, color, spark }) {
 }
 
 function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unterwegs,
-                                lieferanten, bestellungen, initialBestand, onSammelbestellung, onShowLieferanten, onOpenBestellung }) {
+                                lieferanten, bestellungen, initialBestand, onSammelbestellung, selectMode, onToggleSelectMode, onShowLieferanten, onOpenBestellung }) {
   const { t, lang } = useLanguage()
   const [search, setSearch] = useState('')
   // Home's "Bestellliste erstellen" / "Niedriger Bestand" deep-link here
@@ -318,8 +318,9 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
   // Multi-select for a Sammelbestellung (group order): filter to one
   // supplier, tick several articles, order them all in one go.
   const [selected, setSelected] = useState(() => new Set())
-  const [selectMode, setSelectMode] = useState(false)
-  const toggleSelectMode = () => { setSelectMode(s => !s); setSelected(new Set()) }
+  // select mode is owned by the parent (toggle lives in the page header,
+  // next to "Neue Bestellung"); clear the picks when it turns off.
+  useEffect(() => { if (!selectMode) setSelected(new Set()) }, [selectMode])
 
   // On xl screens the whole tab gets a hard height down to the viewport
   // bottom (measured from its stable top edge). Inside it the table
@@ -550,17 +551,11 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
             <Icon name="grid" size={14} color="currentColor" />
           </button>
         </div>
-        {selectMode ? (
-          <button onClick={toggleSelectMode}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-bg-2 border border-border text-secondary shrink-0">
-            <Icon name="x" size={13} color="#9aa3ad" /> {t('common_cancel')}
-          </button>
-        ) : (
-          <button onClick={toggleSelectMode} title={t('lief_auswaehlen')}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-bg-2 border border-border text-secondary shrink-0">
-            <Icon name="clipboard" size={14} color="#9aa3ad" /> {t('lief_auswaehlen')}
-          </button>
-        )}
+        {/* mobile: the header 'Auswählen' is desktop-only, so keep a toggle here for phones */}
+        <button onClick={onToggleSelectMode}
+                className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-bg-2 border border-border text-secondary shrink-0">
+          <Icon name={selectMode ? 'x' : 'clipboard'} size={14} color="#9aa3ad" /> {selectMode ? t('common_cancel') : t('lief_auswaehlen')}
+        </button>
       </Card>
 
       {justAdded && (
@@ -2017,6 +2012,7 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
   const [activeBestellungId, setActiveBestellungId] = useState(null)
   const [addPopupArtikel, setAddPopupArtikel]       = useState(null)
   const [sammelItems, setSammelItems]               = useState(null) // pre-selected articles → group order
+  const [bestellenSelectMode, setBestellenSelectMode] = useState(false)
   const [justAdded, setJustAdded]                   = useState(null)
   const [firma, setFirma]                           = useState(null)
   const [jumpFilterLief, setJumpFilterLief]         = useState(null)
@@ -2044,6 +2040,8 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
     setLoading(true)
     Promise.all([loadLieferanten(), loadBestellungen(), loadFirma()]).then(() => setLoading(false))
   }, [loadLieferanten, loadBestellungen, loadFirma])
+
+  useEffect(() => { setBestellenSelectMode(false) }, [tab])
 
   // Arriving from the Dashboard's "Lieferanten-Statistik"
   // (?tab=bestellungen&lieferant=5), from a Projekt's own Bestellung
@@ -2157,6 +2155,8 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
                                                            bestellungen={bestellungen}
                                                            initialBestand={searchParams.get('bestand')}
                                                            onSammelbestellung={setSammelItems}
+                                                           selectMode={bestellenSelectMode}
+                                                           onToggleSelectMode={() => setBestellenSelectMode(s => !s)}
                                                            onShowLieferanten={() => setTab('lieferanten')}
                                                            onOpenBestellung={setActiveBestellungId} />
     if (tab === 'bestellungen') return <BestellungenTab bestellungen={bestellungen} lieferanten={lieferanten}
@@ -2197,12 +2197,21 @@ export default function LieferantenPage({ articles, setArticles, setMoves }) {
             <h1 className="text-xl sm:text-2xl font-semibold mb-1">{t('lief_title')}</h1>
             <p className="text-secondary text-sm">{t('lief_subtitle')}</p>
           </div>
-          <button onClick={() => tab === 'lieferanten' ? openNewLieferant() : openNewBestellung(null)}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
-            <Icon name="plus" size={15} color="#181c20" />
-            {tab === 'lieferanten' ? t('lief_add_supplier') : t('lief_new_order')}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {tab === 'bestellen' && (
+              <button onClick={() => setBestellenSelectMode(s => !s)}
+                      className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold bg-bg-2 border border-border text-secondary">
+                <Icon name={bestellenSelectMode ? 'x' : 'clipboard'} size={15} color="#9aa3ad" />
+                {bestellenSelectMode ? t('common_cancel') : t('lief_auswaehlen')}
+              </button>
+            )}
+            <button onClick={() => tab === 'lieferanten' ? openNewLieferant() : openNewBestellung(null)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                    style={{ background: 'linear-gradient(135deg,#f0982e,#c96a0f)', color: '#181c20' }}>
+              <Icon name="plus" size={15} color="#181c20" />
+              {tab === 'lieferanten' ? t('lief_add_supplier') : t('lief_new_order')}
+            </button>
+          </div>
         </div>
         <div className="flex gap-1 border-b border-border mb-6">
           {TABS.map(([id, label, icon]) => (
