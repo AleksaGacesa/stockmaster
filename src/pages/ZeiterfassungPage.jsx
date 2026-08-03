@@ -107,8 +107,11 @@ function StatusHeuteCard({ firma, anwesendCount, totalCount, onChanged }) {
   const [nowT, setNowT] = useState(Date.now())
 
   const load = useCallback(async () => {
+    // 2-day window so an overnight (night-shift) session that started
+    // yesterday still counts as "clocked in" after midnight.
+    const seit = dateKey(new Date(Date.now() - 2 * 86400000))
     const { data } = await supabase.from('arbeitszeiten').select('*')
-      .eq('arbeiter_id', user.id).eq('datum', dateKey()).order('kommen_at', { ascending: false })
+      .eq('arbeiter_id', user.id).gte('datum', seit).order('kommen_at', { ascending: false })
     const list = data ?? []; setHeute(list); setMine(list.find(a => !a.gehen_at) ?? null)
   }, [user.id])
   useEffect(() => { load() }, [load])
@@ -417,9 +420,13 @@ export default function ZeiterfassungPage() {
     return { netto, pause, workers }
   }
   const heuteA = dayAgg(selKey), gesternA = dayAgg(gesternKey)
-  // "Anwesend jetzt" = a running session right now (Kommen without
-  // Gehen / open montage) — NOT someone who worked earlier and left.
-  const anwesendIds = new Set(tagFor(selKey).filter(g => g.offen).map(g => g.arbeiter_id))
+  // "Anwesend jetzt" = a running session right now — an open Kommen
+  // (no Gehen) OR a running montage — regardless of which calendar day
+  // it started, so night shifts crossing midnight stay counted.
+  const anwesendIds = new Set([
+    ...arbeitszeiten.filter(a => a.kommen_at && !a.gehen_at).map(a => a.arbeiter_id),
+    ...montagen.filter(m => !m.ende_at && (m.arbeit_start_at || m.ankunft_at || m.abfahrt_at)).map(m => m.arbeiter_id),
+  ])
   const anwesendCount = anwesendIds.size
   // Came to work at all today (for Fehlzeiten = never showed up).
   const praesentHeuteIds = new Set(tagFor(selKey).filter(g => g.nettoMin > 0 || g.offen).map(g => g.arbeiter_id))
@@ -486,13 +493,14 @@ export default function ZeiterfassungPage() {
   const heuteMon = montagen.filter(m => m.datum === selKey)
   // check-ins today without a GPS fix → notification card
   const ohneGps = heuteAz.filter(a => a.kommen_at && a.kommen_distanz == null)
-  // currently working on a montage site (arbeit_start set, not ended)
-  const laufMon  = heuteMon.filter(m => m.arbeit_start_at && !m.ende_at)
+  // currently on a montage site (running now) — day-independent so an
+  // overnight montage started yesterday still shows.
+  const laufMon  = montagen.filter(m => m.arbeit_start_at && !m.ende_at)
   const projektOf = (id) => laufMon.find(m => m.arbeiter_id === id)?.projekt?.name ?? null
   const aufMontage = [...new Map(laufMon.map(m => [m.arbeiter_id, m])).values()]
     .map(m => ({ id: m.arbeiter_id, name: m.arbeiter_name, projekt: m.projekt?.name }))
-  // on break right now
-  const aufPause = heuteAz.filter(a => !a.gehen_at && pauseLaeuft(a))
+  // on break right now (any open session, regardless of start day)
+  const aufPause = arbeitszeiten.filter(a => !a.gehen_at && pauseLaeuft(a))
     .map(a => ({ id: a.arbeiter_id, name: a.arbeiter_name }))
   // most recent check-ins
   const letzteAnmeldungen = [...arbeitszeiten].filter(a => a.kommen_at)
