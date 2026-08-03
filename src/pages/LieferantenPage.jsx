@@ -318,6 +318,8 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
   // Multi-select for a Sammelbestellung (group order): filter to one
   // supplier, tick several articles, order them all in one go.
   const [selected, setSelected] = useState(() => new Set())
+  const [selectMode, setSelectMode] = useState(false)
+  const toggleSelectMode = () => { setSelectMode(s => !s); setSelected(new Set()) }
 
   // On xl screens the whole tab gets a hard height down to the viewport
   // bottom (measured from its stable top edge). Inside it the table
@@ -456,12 +458,14 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
   const compactList = (
     <div className="space-y-1.5">
       {filtered.map(a => (
-        <div key={a.id} onClick={() => toggleSel(a.id)}
-             className={`bg-bg-1 border rounded-xl px-3 py-2.5 flex items-center gap-3 cursor-pointer transition-colors ${
-               selected.has(a.id) ? 'border-amber bg-amber/5' : 'border-border'}`}>
-          <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSel(a.id)}
-                 onClick={e => e.stopPropagation()}
-                 className="w-4 h-4 accent-amber shrink-0 cursor-pointer" />
+        <div key={a.id} onClick={selectMode ? () => toggleSel(a.id) : undefined}
+             className={`bg-bg-1 border rounded-xl px-3 py-2.5 flex items-center gap-3 transition-colors ${selectMode ? 'cursor-pointer' : ''} ${
+               selectMode && selected.has(a.id) ? 'border-amber bg-amber/5' : 'border-border'}`}>
+          {selectMode && (
+            <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSel(a.id)}
+                   onClick={e => e.stopPropagation()}
+                   className="w-4 h-4 accent-amber shrink-0 cursor-pointer" />
+          )}
           <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 hidden sm:block">
             <ArtikelBild artikel={a} iconSize={16} />
           </div>
@@ -546,6 +550,17 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
             <Icon name="grid" size={14} color="currentColor" />
           </button>
         </div>
+        {selectMode ? (
+          <button onClick={toggleSelectMode}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-bg-2 border border-border text-secondary shrink-0">
+            <Icon name="x" size={13} color="#9aa3ad" /> {t('common_cancel')}
+          </button>
+        ) : (
+          <button onClick={toggleSelectMode} title={t('lief_auswaehlen')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-bg-2 border border-border text-secondary shrink-0">
+            <Icon name="clipboard" size={14} color="#9aa3ad" /> {t('lief_auswaehlen')}
+          </button>
+        )}
       </Card>
 
       {justAdded && (
@@ -578,11 +593,13 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                                 style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}>
                             <div className="aspect-video overflow-hidden border-b border-border relative">
                               <ArtikelBild artikel={a} iconSize={30} />
-                              <label onClick={e => e.stopPropagation()}
-                                     className="absolute top-2 left-2 w-6 h-6 rounded-md bg-bg-0/80 border border-border flex items-center justify-center cursor-pointer">
-                                <input type="checkbox" checked={sel} onChange={() => toggleSel(a.id)}
-                                       className="w-4 h-4 accent-amber cursor-pointer" />
-                              </label>
+                              {selectMode && (
+                                <label onClick={e => e.stopPropagation()}
+                                       className="absolute top-2 left-2 w-6 h-6 rounded-md bg-bg-0/80 border border-border flex items-center justify-center cursor-pointer">
+                                  <input type="checkbox" checked={sel} onChange={() => toggleSel(a.id)}
+                                         className="w-4 h-4 accent-amber cursor-pointer" />
+                                </label>
+                              )}
                             </div>
                             <div className="p-3 flex flex-col gap-1.5 flex-1">
                               <div className="flex items-center justify-between gap-2">
@@ -615,12 +632,14 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-[11px] uppercase tracking-wide text-muted border-b border-border sticky top-0 bg-bg-1 z-10">
-                          <th className="pl-4 pr-1 py-2.5">
-                            <input type="checkbox" checked={allSelected}
-                                   ref={el => { if (el) el.indeterminate = !allSelected && someSelected }}
-                                   onChange={toggleAll}
-                                   className="w-4 h-4 accent-amber cursor-pointer align-middle" />
-                          </th>
+                          {selectMode && (
+                            <th className="pl-4 pr-1 py-2.5">
+                              <input type="checkbox" checked={allSelected}
+                                     ref={el => { if (el) el.indeterminate = !allSelected && someSelected }}
+                                     onChange={toggleAll}
+                                     className="w-4 h-4 accent-amber cursor-pointer align-middle" />
+                            </th>
+                          )}
                           <th className="px-4 py-2.5 font-medium">{t('lief_col_artikel')}</th>
                           <th className="px-4 py-2.5 font-medium">{t('lief_col_details')}</th>
                           <th className="px-4 py-2.5 font-medium">{t('lief_col_lager')}</th>
@@ -638,12 +657,14 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                           const sel = selected.has(a.id)
                           return (
                             <Fragment key={a.id}>
-                              <tr onClick={() => setExpandedId(expanded ? null : a.id)}
-                                  className={`border-b border-border cursor-pointer transition-colors ${sel ? 'bg-amber/5' : expanded ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
-                                <td className="pl-4 pr-1 py-2.5" onClick={e => e.stopPropagation()}>
-                                  <input type="checkbox" checked={sel} onChange={() => toggleSel(a.id)}
-                                         className="w-4 h-4 accent-amber cursor-pointer align-middle" />
-                                </td>
+                              <tr onClick={() => selectMode ? toggleSel(a.id) : setExpandedId(expanded ? null : a.id)}
+                                  className={`border-b border-border cursor-pointer transition-colors ${selectMode && sel ? 'bg-amber/5' : expanded ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
+                                {selectMode && (
+                                  <td className="pl-4 pr-1 py-2.5" onClick={e => e.stopPropagation()}>
+                                    <input type="checkbox" checked={sel} onChange={() => toggleSel(a.id)}
+                                           className="w-4 h-4 accent-amber cursor-pointer align-middle" />
+                                  </td>
+                                )}
                                 <td className="px-4 py-2.5">
                                   <div className="flex items-center gap-3">
                                     <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 border border-border">
@@ -691,7 +712,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                               </tr>
                               {expanded && (
                                 <tr className="border-b border-border bg-bg-0/40">
-                                  <td colSpan={8} className="px-6 py-2.5 text-xs text-secondary">
+                                  <td colSpan={selectMode ? 8 : 7} className="px-6 py-2.5 text-xs text-secondary">
                                     <div className="flex flex-wrap gap-x-6 gap-y-1">
                                       {lastPurchase[a.id] ? (
                                         <span>{t('lief_last_purchase')}: {fmtDt(lastPurchase[a.id].created_at)} · {lastPurchase[a.id].menge} {a.einheit} · {fmt(lastPurchase[a.id].preis ?? 0)}/{a.einheit}</span>
@@ -715,7 +736,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                 )}
                 {/* selection / Sammelbestellung bar */}
                 <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs flex-wrap gap-2 xl:shrink-0">
-                  {selected.size > 0 ? (
+                  {selectMode && selected.size > 0 ? (
                     <>
                       <span className="text-secondary font-medium">
                         {selected.size} {t('lief_ausgewaehlt')}
@@ -735,7 +756,7 @@ function ArtikelBestellenTab({ articles, onOpenAdd, justAdded, lastPurchase, unt
                         {filtered.length} {lang === 'en' ? 'articles' : 'Artikel'}
                         {filterLieferant !== 'alle' && ` · ${liefById.get(Number(filterLieferant))?.name ?? ''}`}
                       </span>
-                      <span className="text-muted hidden sm:inline">{t('lief_sammel_hint')}</span>
+                      <span className="text-muted hidden sm:inline">{selectMode ? t('lief_sammel_hint') : t('lief_auswaehlen_hint')}</span>
                     </>
                   )}
                 </div>
