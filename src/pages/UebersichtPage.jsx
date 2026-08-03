@@ -633,14 +633,14 @@ export default function UebersichtPage({ articles, setArticles, setMoves }) {
               <option value="Niedrig">{t('ueb_low_stock_option')}</option>
               <option value="Ausreichend">{t('stock_sufficient')}</option>
             </select>
-            <div className="flex border border-border rounded-xl overflow-hidden ml-auto">
-              <button onClick={() => setView('list')}
-                      className={`p-2.5 transition-colors ${view === 'list' ? 'bg-bg-3' : 'bg-bg-2 hover:bg-bg-3'}`}>
-                <Icon name="filter" size={15} color={view === 'list' ? '#eef1f4' : '#6b7480'} />
+            <div className="flex items-center gap-1 bg-bg-2 border border-border rounded-xl p-1 ml-auto">
+              <button onClick={() => setView('list')} title="Tabelle"
+                      className={`p-1.5 rounded-lg transition-colors ${view === 'list' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+                <Icon name="list" size={14} color="currentColor" />
               </button>
-              <button onClick={() => setView('grid')}
-                      className={`p-2.5 transition-colors ${view === 'grid' ? 'bg-bg-3' : 'bg-bg-2 hover:bg-bg-3'}`}>
-                <Icon name="box" size={15} color={view === 'grid' ? '#eef1f4' : '#6b7480'} />
+              <button onClick={() => setView('grid')} title="Karten"
+                      className={`p-1.5 rounded-lg transition-colors ${view === 'grid' ? 'bg-amber text-bg-0' : 'text-muted hover:bg-bg-3'}`}>
+                <Icon name="grid" size={14} color="currentColor" />
               </button>
             </div>
             {activeFilters > 0 && (
